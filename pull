@@ -1,0 +1,6 @@
+#!/bin/tcsh
+echo Updating mutable files...
+cp -v ../mixtures/app/inchi*.js .
+cp -v ../mixtures/app/inchi.wasm .
+cp -v ../mixtures/app/mixfile.js* .
+
