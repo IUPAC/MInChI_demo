@@ -24920,7 +24920,7 @@ var Mixtures;
                 let writer = new wmk.MDLMOLWriter(mol);
                 let mdlmol = writer.write();
                 if (this.nativeMolfileToInChI != null)
-                    return this.nativeMolfileToInChI(mdlmol, '-AuxNone -NoLabels -Key');
+                    return this.nativeMolfileToInChI(mdlmol, '-AuxNone -NoLabels');
                 if (!inchi)
                     inchi = new InChI();
                 if (!inchi.available)
@@ -26459,10 +26459,18 @@ var Mixtures;
 })(Mixtures || (Mixtures = {}));
 var Mixtures;
 (function (Mixtures) {
+    let MInChISegment;
+    (function (MInChISegment) {
+        MInChISegment[MInChISegment["None"] = 0] = "None";
+        MInChISegment[MInChISegment["Header"] = 1] = "Header";
+        MInChISegment[MInChISegment["Component"] = 2] = "Component";
+        MInChISegment[MInChISegment["Hierarchy"] = 3] = "Hierarchy";
+        MInChISegment[MInChISegment["Concentration"] = 4] = "Concentration";
+    })(MInChISegment = Mixtures.MInChISegment || (Mixtures.MInChISegment = {}));
     class ExportMInChI {
         constructor(mixfile) {
-            this.mixfile = mixfile;
             this.minchi = '?';
+            this.segment = null;
             this.mixture = new Mixtures.Mixture(deepClone(mixfile));
         }
         fillInChI() {
@@ -26521,10 +26529,30 @@ var Mixtures;
             let componentList = Vec.concat(inchiList, placeList);
             let root = modmix.mixfile;
             let builder = this.assembleContents(root, componentList);
-            this.minchi = 'MInChI=0.00.1S/' + componentList.join('&') + '/n' + builder.layerN + '/g' + builder.layerG;
+            this.minchi = '';
+            this.segment = [];
+            let appendSegment = (str, type) => {
+                this.minchi += str;
+                for (let n = 0; n < str.length; n++)
+                    this.segment.push(type);
+            };
+            appendSegment('MInChI=0.00.1S', MInChISegment.Header);
+            appendSegment('/', MInChISegment.None);
+            for (let n = 0; n < componentList.length; n++) {
+                if (n > 0)
+                    appendSegment('&', MInChISegment.None);
+                appendSegment(componentList[n], MInChISegment.Component);
+            }
+            appendSegment('/', MInChISegment.None);
+            appendSegment('n' + builder.layerN, MInChISegment.Hierarchy);
+            appendSegment('/', MInChISegment.None);
+            appendSegment('g' + builder.layerG, MInChISegment.Concentration);
         }
         getResult() {
             return this.minchi;
+        }
+        getSegment() {
+            return this.segment;
         }
         assembleContents(mcomp, componentList) {
             let tree = { 'layerN': '', 'layerG': '' };
@@ -27505,11 +27533,12 @@ var Mixtures;
         ],
     ];
     class WebWidget extends wmk.Widget {
-        constructor(proxyClip) {
+        constructor() {
             super();
+            this.proxyClip = new wmk.ClipboardProxyWeb();
             this.editor = null;
             this.banner = new Mixtures.MenuBanner(BANNER, (cmd) => this.menuAction(cmd));
-            this.editor = new Mixtures.EditMixtureWeb(proxyClip);
+            this.editor = new Mixtures.EditMixtureWeb(this.proxyClip);
             this.editor.callbackUpdateTitle = () => { };
         }
         render(parent, width, height) {
@@ -27523,6 +27552,12 @@ var Mixtures;
             let divMainX = $('<div style="position: absolute; top: 0; right: 0; bottom: 0; left: 0;"/>').appendTo(divMain);
             this.banner.render(divMenu);
             this.editor.render(divMainX);
+        }
+        isBlank() {
+            return this.editor.isBlank();
+        }
+        getMixture() {
+            return this.editor.getMixture();
         }
         setMixture(mixture) {
             this.editor.clearHistory();
