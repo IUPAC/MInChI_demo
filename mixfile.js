@@ -1168,6 +1168,10 @@ var WebMolKit;
             }
             return datum;
         }
+        getMoleculeClone(row, col) {
+            let mol = this.getMolecule(row, col);
+            return mol == null ? null : mol.clone();
+        }
         getMoleculeBlank(row, col) {
             let mol = this.getMolecule(row, col);
             return mol ? mol : new WebMolKit.Molecule();
@@ -3372,7 +3376,7 @@ var WebMolKit;
             else if ((align & TextAlign.Top) != 0)
                 dy = metrics[1];
             else if ((align & TextAlign.Bottom) != 0)
-                dy = metrics[2];
+                dy = -metrics[2];
             if (dy != 0) {
                 bx -= dy * sinTheta;
                 by += dy * cosTheta;
@@ -15229,6 +15233,397 @@ var WebMolKit;
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
 (function (WebMolKit) {
+    class Theme {
+    }
+    Theme.BASE_URL = null;
+    Theme.RESOURCE_URL = null;
+    Theme.foreground = 0x000000;
+    Theme.background = 0xFFFFFF;
+    Theme.lowlight = 0x24D0D0;
+    Theme.lowlightEdge1 = 0x47D5D2;
+    Theme.lowlightEdge2 = 0x008FD1;
+    Theme.highlight = 0x00FF00;
+    Theme.highlightEdge1 = 0x00CA59;
+    Theme.highlightEdge2 = 0x008650;
+    Theme.error = 0xFF0000;
+    WebMolKit.Theme = Theme;
+    function initWebMolKit(resourcePath) {
+        Theme.RESOURCE_URL = resourcePath;
+        try {
+            let _ = document;
+        }
+        catch (e) {
+            return;
+        }
+        if (document)
+            installInlineCSS('main', composeMainCSS());
+    }
+    WebMolKit.initWebMolKit = initWebMolKit;
+    let cssTagsInstalled = new Set();
+    function hasInlineCSS(tag) { return cssTagsInstalled.has(tag); }
+    WebMolKit.hasInlineCSS = hasInlineCSS;
+    function installInlineCSS(tag, css) {
+        if (cssTagsInstalled.has(tag))
+            return false;
+        let el = document.createElement('style');
+        el.innerHTML = css;
+        document.head.appendChild(el);
+        cssTagsInstalled.add(tag);
+        return true;
+    }
+    WebMolKit.installInlineCSS = installInlineCSS;
+    function composeMainCSS() {
+        let lowlight = WebMolKit.colourCode(Theme.lowlight), lowlightEdge1 = WebMolKit.colourCode(Theme.lowlightEdge1), lowlightEdge2 = WebMolKit.colourCode(Theme.lowlightEdge2);
+        let highlight = WebMolKit.colourCode(Theme.highlight), highlightEdge1 = WebMolKit.colourCode(Theme.highlightEdge1), highlightEdge2 = WebMolKit.colourCode(Theme.highlightEdge2);
+        return `
+		.wmk-button
+		{
+			display: inline-block;
+			padding: 6px 12px;
+			margin-bottom: 0;
+			font-family: 'Open Sans', sans-serif;
+			font-size: 14px;
+			font-weight: normal;
+			line-height: 1.42857143;
+			text-align: center;
+			white-space: nowrap;
+			vertical-align: middle;
+			cursor: pointer;
+			background-image: none;
+			border: 1px solid transparent;
+			border-radius: 4px;
+			-ms-touch-action: manipulation; touch-action: manipulation;
+			-webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+		}
+		.wmk-button:focus,
+		.wmk-button:active:focus,
+		.wmk-button.active:focus,
+		.wmk-button.focus,
+		.wmk-button:active.focus,
+		.wmk-button.active.focus
+		{
+			outline: thin dotted;
+			outline: 5px auto -webkit-focus-ring-color;
+			outline-offset: -2px;
+		}
+		.wmk-button:hover,
+		.wmk-button:focus,
+		.wmk-button.focus
+		{
+			color: #333;
+			text-decoration: none;
+		}
+		.wmk-button:active,
+		.wmk-button.active
+		{
+			background-image: none;
+			outline: 0;
+			-webkit-box-shadow: inset 0 3px 5px rgba(0, 0, 0, .125);
+			box-shadow: inset 0 3px 5px rgba(0, 0, 0, .125);
+		}
+		.wmk-button.disabled,
+		.wmk-button[disabled],
+		fieldset[disabled] .wmk-button
+		{
+			cursor: not-allowed;
+			filter: alpha(opacity=65);
+			-webkit-box-shadow: none;
+			box-shadow: none;
+			opacity: .65;
+		}
+		a.wmk-button.disabled,
+		fieldset[disabled] a.wmk-button
+		{
+			pointer-events: none;
+		}
+
+		/* shrunken button */
+
+		.wmk-button-small
+		{
+			padding: 2px 4px;
+			line-height: 1;
+			font-size: 12px;
+		}
+
+		/* default button */
+
+		.wmk-button-default
+		{
+			color: #333;
+			background-color: #fff;
+			background-image: linear-gradient(to right bottom, #FFFFFF, #E0E0E0);
+			border-color: #ccc;
+		}
+		.wmk-button-default:focus,
+		.wmk-button-default.focus
+		{
+			color: #333;
+			background-color: #e6e6e6;
+			border-color: #8c8c8c;
+		}
+		.wmk-button-default:hover
+		{
+			color: #333;
+			background-color: #e6e6e6;
+			border-color: #adadad;
+		}
+		.wmk-button-default:active,
+		.wmk-button-default.active,
+		.open > .dropdown-toggle.wmk-button-default
+		{
+			color: #333;
+			background-color: #e6e6e6;
+			border-color: #adadad;
+		}
+		.wmk-button-default:active:hover,
+		.wmk-button-default.active:hover,
+		.open > .dropdown-toggle.wmk-button-default:hover,
+		.wmk-button-default:active:focus,
+		.wmk-button-default.active:focus,
+		.open > .dropdown-toggle.wmk-button-default:focus,
+		.wmk-button-default:active.focus,
+		.wmk-button-default.active.focus,
+		.open > .dropdown-toggle.wmk-button-default.focus
+		{
+			color: #333;
+			background-color: #d4d4d4;
+			border-color: #8c8c8c;
+		}
+		.wmk-button-default:active,
+		.wmk-button-default.active,
+		.open > .dropdown-toggle.wmk-button-default
+		{
+			background-image: none;
+		}
+		.wmk-button-default.disabled:hover,
+		.wmk-button-default[disabled]:hover,
+		fieldset[disabled] .wmk-button-default:hover,
+		.wmk-button-default.disabled:focus,
+		.wmk-button-default[disabled]:focus,
+		fieldset[disabled] .wmk-button-default:focus,
+		.wmk-button-default.disabled.focus,
+		.wmk-button-default[disabled].focus,
+		fieldset[disabled] .wmk-button-default.focus
+		{
+			background-color: #fff;
+			border-color: #ccc;
+		}
+		.wmk-button-default .badge
+		{
+			color: #fff;
+			background-color: #333;
+		}
+
+		/* primary button */
+
+		.wmk-button-primary
+		{
+			color: #fff;
+			background-color: #008FD2;
+			background-image: linear-gradient(to right bottom, ${lowlightEdge1}, ${lowlightEdge2});
+			border-color: #00C0C0;
+		}
+		.wmk-button-primary:focus,
+		.wmk-button-primary.focus
+		{
+			color: #fff;
+			background-color: ${lowlight};
+			border-color: #122b40;
+		}
+		.wmk-button-primary:hover
+		{
+			color: #fff;
+			background-color: #286090;
+			border-color: #204d74;
+		}
+		.wmk-button-primary:active,
+		.wmk-button-primary.active,
+		.open > .dropdown-toggle.wmk-button-primary
+		{
+			color: #fff;
+			background-color: #286090;
+			border-color: #20744d;
+		}
+		.wmk-button-primary:active:hover,
+		.wmk-button-primary.active:hover,
+		.open > .dropdown-toggle.wmk-button-primary:hover,
+		.wmk-button-primary:active:focus,
+		.wmk-button-primary.active:focus,
+		.open > .dropdown-toggle.wmk-button-primary:focus,
+		.wmk-button-primary:active.focus,
+		.wmk-button-primary.active.focus,
+		.open > .dropdown-toggle.wmk-button-primary.focus
+		{
+			color: #fff;
+			background-color: ${highlight};
+			background-image: linear-gradient(to right bottom, ${highlightEdge1}, ${highlightEdge2});
+			border-color: #12802b;
+		}
+		.wmk-button-primary:active,
+		.wmk-button-primary.active,
+		.open > .dropdown-toggle.wmk-button-primary
+		{
+			background-image: none;
+		}
+		.wmk-button-primary.disabled:hover,
+		.wmk-button-primary[disabled]:hover,
+		fieldset[disabled] .wmk-button-primary:hover,
+		.wmk-button-primary.disabled:focus,
+		.wmk-button-primary[disabled]:focus,
+		fieldset[disabled] .wmk-button-primary:focus,
+		.wmk-button-primary.disabled.focus,
+		.wmk-button-primary[disabled].focus,
+		fieldset[disabled] .wmk-button-primary.focus
+		{
+			background-color: #337ab7;
+			border-color: #2ea46d;
+		}
+		.wmk-button-primary .badge
+		{
+			color: #337ab7;
+			background-color: #fff;
+		}
+	`;
+    }
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
+    WebMolKit.TEMPLATE_FILES = [
+        'rings',
+        'termgrp',
+        'funcgrp',
+        'protgrp',
+        'nonplrings',
+        'largerings',
+        'crownethers',
+        'ligmonodent',
+        'ligbident',
+        'ligtrident',
+        'ligmultident',
+        'cagecmplx',
+        'aminoacids',
+        'biomolecules',
+        'saccharides'
+    ];
+    class AbbrevContainer {
+        constructor() {
+            this.abbrevs = [];
+        }
+        static needsSetup() { return !this.main; }
+        static setupData() {
+            return __awaiter(this, void 0, void 0, function* () {
+                if (this.main)
+                    return;
+                if (!WebMolKit.Theme.RESOURCE_URL)
+                    throw ('RPC resource URL not defined.');
+                this.main = new AbbrevContainer();
+                for (let tfn of WebMolKit.TEMPLATE_FILES) {
+                    let url = WebMolKit.Theme.RESOURCE_URL + '/data/templates/' + tfn + '.ds';
+                    let dsstr = yield WebMolKit.readTextURL(url);
+                    let ds = WebMolKit.DataSheetStream.readXML(dsstr);
+                    let colMol = ds.firstColOfType("molecule"), colAbbrev = ds.findColByName('Abbrev', "string");
+                    if (colMol < 0 || colAbbrev < 0)
+                        continue;
+                    for (let n = 0; n < ds.numRows; n++) {
+                        let frag = ds.getMoleculeClone(n, colMol), name = ds.getString(n, colAbbrev);
+                        if (!frag || !name)
+                            continue;
+                        let attcount = 0, firstConn = 0;
+                        for (let i = 1; i <= frag.numAtoms; i++)
+                            if (frag.atomElement(i) == WebMolKit.MolUtil.TEMPLATE_ATTACHMENT) {
+                                if (firstConn == 0)
+                                    firstConn = i;
+                                frag.setAtomElement(i, WebMolKit.MolUtil.ABBREV_ATTACHMENT);
+                                attcount++;
+                            }
+                        if (attcount != 1)
+                            continue;
+                        if (firstConn > 1)
+                            frag.swapAtoms(1, firstConn);
+                        this.main.submitAbbreviation(name, frag);
+                    }
+                }
+            });
+        }
+        getAbbrevs() {
+            return this.abbrevs.slice(0);
+        }
+        submitAbbreviation(name, infrag, promote = false) {
+            let frag = infrag.clone();
+            this.submitFragment(name, frag, promote);
+        }
+        submitMolecule(inmol, promote = false) {
+            let mol = inmol.clone();
+            for (let n = 1; n <= mol.numAtoms; n++) {
+                let frag = WebMolKit.MolUtil.getAbbrev(mol, n);
+                if (!frag)
+                    continue;
+                this.submitFragment(mol.atomElement(n), frag, promote);
+            }
+        }
+        substituteAbbrevName(mol, atom) {
+            let frag = WebMolKit.MolUtil.getAbbrev(mol, atom);
+            if (!frag)
+                return false;
+            for (let abbrev of this.abbrevs)
+                if (abbrev.frag.numAtoms == frag.numAtoms) {
+                    if (WebMolKit.CoordUtil.sketchEquivalent(frag, abbrev.frag)) {
+                        mol.setAtomElement(atom, abbrev.name);
+                        return true;
+                    }
+                }
+            return false;
+        }
+        submitFragment(name, frag, promote) {
+            if (name == '?')
+                return;
+            let vx = 0, vy = 0;
+            let adj = frag.atomAdjList(1);
+            for (let a of adj) {
+                vx += frag.atomX(a) - frag.atomX(1);
+                vy += frag.atomY(a) - frag.atomY(1);
+            }
+            if (adj.length > 1) {
+                let inv = 1.0 / adj.length;
+                vx *= inv;
+                vy *= inv;
+            }
+            if (WebMolKit.norm_xy(vx, vy) > 0.1 * 0.1) {
+                let theta = Math.atan2(vy, vx);
+                if (Math.abs(theta) > 2 * WebMolKit.DEGRAD)
+                    WebMolKit.CoordUtil.rotateMolecule(frag, -theta);
+            }
+            let hit = -1;
+            for (let n = 0; n < this.abbrevs.length; n++) {
+                let a = this.abbrevs[n];
+                if (a.name != name)
+                    continue;
+                hit = n;
+                break;
+            }
+            let abv = { 'name': name, 'frag': frag };
+            if (hit < 0) {
+                if (promote)
+                    this.abbrevs.unshift(abv);
+                else
+                    this.abbrevs.push(abv);
+            }
+            else {
+                if (promote && hit > 0) {
+                    this.abbrevs.splice(hit, 1);
+                    this.abbrevs.unshift(abv);
+                }
+                else
+                    this.abbrevs[hit] = abv;
+            }
+        }
+    }
+    AbbrevContainer.main = null;
+    WebMolKit.AbbrevContainer = AbbrevContainer;
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
     class DataSheetStream {
         static readXML(strXML) {
             let xmlDoc = new DOMParser().parseFromString(strXML, 'application/xml');
@@ -15770,262 +16165,6 @@ var WebMolKit;
         'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
     WebMolKit.FormatList = FormatList;
-})(WebMolKit || (WebMolKit = {}));
-var WebMolKit;
-(function (WebMolKit) {
-    class Theme {
-    }
-    Theme.BASE_URL = null;
-    Theme.RESOURCE_URL = null;
-    Theme.foreground = 0x000000;
-    Theme.background = 0xFFFFFF;
-    Theme.lowlight = 0x24D0D0;
-    Theme.lowlightEdge1 = 0x47D5D2;
-    Theme.lowlightEdge2 = 0x008FD1;
-    Theme.highlight = 0x00FF00;
-    Theme.highlightEdge1 = 0x00CA59;
-    Theme.highlightEdge2 = 0x008650;
-    Theme.error = 0xFF0000;
-    WebMolKit.Theme = Theme;
-    function initWebMolKit(resourcePath) {
-        Theme.RESOURCE_URL = resourcePath;
-        try {
-            let _ = document;
-        }
-        catch (e) {
-            return;
-        }
-        if (document)
-            installInlineCSS('main', composeMainCSS());
-    }
-    WebMolKit.initWebMolKit = initWebMolKit;
-    let cssTagsInstalled = new Set();
-    function hasInlineCSS(tag) { return cssTagsInstalled.has(tag); }
-    WebMolKit.hasInlineCSS = hasInlineCSS;
-    function installInlineCSS(tag, css) {
-        if (cssTagsInstalled.has(tag))
-            return false;
-        let el = document.createElement('style');
-        el.innerHTML = css;
-        document.head.appendChild(el);
-        cssTagsInstalled.add(tag);
-        return true;
-    }
-    WebMolKit.installInlineCSS = installInlineCSS;
-    function composeMainCSS() {
-        let lowlight = WebMolKit.colourCode(Theme.lowlight), lowlightEdge1 = WebMolKit.colourCode(Theme.lowlightEdge1), lowlightEdge2 = WebMolKit.colourCode(Theme.lowlightEdge2);
-        let highlight = WebMolKit.colourCode(Theme.highlight), highlightEdge1 = WebMolKit.colourCode(Theme.highlightEdge1), highlightEdge2 = WebMolKit.colourCode(Theme.highlightEdge2);
-        return `
-		.wmk-button
-		{
-			display: inline-block;
-			padding: 6px 12px;
-			margin-bottom: 0;
-			font-family: 'Open Sans', sans-serif;
-			font-size: 14px;
-			font-weight: normal;
-			line-height: 1.42857143;
-			text-align: center;
-			white-space: nowrap;
-			vertical-align: middle;
-			cursor: pointer;
-			background-image: none;
-			border: 1px solid transparent;
-			border-radius: 4px;
-			-ms-touch-action: manipulation; touch-action: manipulation;
-			-webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
-		}
-		.wmk-button:focus,
-		.wmk-button:active:focus,
-		.wmk-button.active:focus,
-		.wmk-button.focus,
-		.wmk-button:active.focus,
-		.wmk-button.active.focus
-		{
-			outline: thin dotted;
-			outline: 5px auto -webkit-focus-ring-color;
-			outline-offset: -2px;
-		}
-		.wmk-button:hover,
-		.wmk-button:focus,
-		.wmk-button.focus
-		{
-			color: #333;
-			text-decoration: none;
-		}
-		.wmk-button:active,
-		.wmk-button.active
-		{
-			background-image: none;
-			outline: 0;
-			-webkit-box-shadow: inset 0 3px 5px rgba(0, 0, 0, .125);
-			box-shadow: inset 0 3px 5px rgba(0, 0, 0, .125);
-		}
-		.wmk-button.disabled,
-		.wmk-button[disabled],
-		fieldset[disabled] .wmk-button
-		{
-			cursor: not-allowed;
-			filter: alpha(opacity=65);
-			-webkit-box-shadow: none;
-			box-shadow: none;
-			opacity: .65;
-		}
-		a.wmk-button.disabled,
-		fieldset[disabled] a.wmk-button
-		{
-			pointer-events: none;
-		}
-
-		/* shrunken button */
-
-		.wmk-button-small
-		{
-			padding: 2px 4px;
-			line-height: 1;
-			font-size: 12px;
-		}
-
-		/* default button */
-
-		.wmk-button-default
-		{
-			color: #333;
-			background-color: #fff;
-			background-image: linear-gradient(to right bottom, #FFFFFF, #E0E0E0);
-			border-color: #ccc;
-		}
-		.wmk-button-default:focus,
-		.wmk-button-default.focus
-		{
-			color: #333;
-			background-color: #e6e6e6;
-			border-color: #8c8c8c;
-		}
-		.wmk-button-default:hover
-		{
-			color: #333;
-			background-color: #e6e6e6;
-			border-color: #adadad;
-		}
-		.wmk-button-default:active,
-		.wmk-button-default.active,
-		.open > .dropdown-toggle.wmk-button-default
-		{
-			color: #333;
-			background-color: #e6e6e6;
-			border-color: #adadad;
-		}
-		.wmk-button-default:active:hover,
-		.wmk-button-default.active:hover,
-		.open > .dropdown-toggle.wmk-button-default:hover,
-		.wmk-button-default:active:focus,
-		.wmk-button-default.active:focus,
-		.open > .dropdown-toggle.wmk-button-default:focus,
-		.wmk-button-default:active.focus,
-		.wmk-button-default.active.focus,
-		.open > .dropdown-toggle.wmk-button-default.focus
-		{
-			color: #333;
-			background-color: #d4d4d4;
-			border-color: #8c8c8c;
-		}
-		.wmk-button-default:active,
-		.wmk-button-default.active,
-		.open > .dropdown-toggle.wmk-button-default
-		{
-			background-image: none;
-		}
-		.wmk-button-default.disabled:hover,
-		.wmk-button-default[disabled]:hover,
-		fieldset[disabled] .wmk-button-default:hover,
-		.wmk-button-default.disabled:focus,
-		.wmk-button-default[disabled]:focus,
-		fieldset[disabled] .wmk-button-default:focus,
-		.wmk-button-default.disabled.focus,
-		.wmk-button-default[disabled].focus,
-		fieldset[disabled] .wmk-button-default.focus
-		{
-			background-color: #fff;
-			border-color: #ccc;
-		}
-		.wmk-button-default .badge
-		{
-			color: #fff;
-			background-color: #333;
-		}
-
-		/* primary button */
-
-		.wmk-button-primary
-		{
-			color: #fff;
-			background-color: #008FD2;
-			background-image: linear-gradient(to right bottom, ${lowlightEdge1}, ${lowlightEdge2});
-			border-color: #00C0C0;
-		}
-		.wmk-button-primary:focus,
-		.wmk-button-primary.focus
-		{
-			color: #fff;
-			background-color: ${lowlight};
-			border-color: #122b40;
-		}
-		.wmk-button-primary:hover
-		{
-			color: #fff;
-			background-color: #286090;
-			border-color: #204d74;
-		}
-		.wmk-button-primary:active,
-		.wmk-button-primary.active,
-		.open > .dropdown-toggle.wmk-button-primary
-		{
-			color: #fff;
-			background-color: #286090;
-			border-color: #20744d;
-		}
-		.wmk-button-primary:active:hover,
-		.wmk-button-primary.active:hover,
-		.open > .dropdown-toggle.wmk-button-primary:hover,
-		.wmk-button-primary:active:focus,
-		.wmk-button-primary.active:focus,
-		.open > .dropdown-toggle.wmk-button-primary:focus,
-		.wmk-button-primary:active.focus,
-		.wmk-button-primary.active.focus,
-		.open > .dropdown-toggle.wmk-button-primary.focus
-		{
-			color: #fff;
-			background-color: ${highlight};
-			background-image: linear-gradient(to right bottom, ${highlightEdge1}, ${highlightEdge2});
-			border-color: #12802b;
-		}
-		.wmk-button-primary:active,
-		.wmk-button-primary.active,
-		.open > .dropdown-toggle.wmk-button-primary
-		{
-			background-image: none;
-		}
-		.wmk-button-primary.disabled:hover,
-		.wmk-button-primary[disabled]:hover,
-		fieldset[disabled] .wmk-button-primary:hover,
-		.wmk-button-primary.disabled:focus,
-		.wmk-button-primary[disabled]:focus,
-		fieldset[disabled] .wmk-button-primary:focus,
-		.wmk-button-primary.disabled.focus,
-		.wmk-button-primary[disabled].focus,
-		fieldset[disabled] .wmk-button-primary.focus
-		{
-			background-color: #337ab7;
-			border-color: #2ea46d;
-		}
-		.wmk-button-primary .badge
-		{
-			color: #337ab7;
-			background-color: #fff;
-		}
-	`;
-    }
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
 (function (WebMolKit) {
@@ -20301,23 +20440,7 @@ var WebMolKit;
             }
         }
         loadResourceData(onComplete) {
-            let roster = [
-                'rings',
-                'termgrp',
-                'funcgrp',
-                'protgrp',
-                'nonplrings',
-                'largerings',
-                'crownethers',
-                'ligmonodent',
-                'ligbident',
-                'ligtrident',
-                'ligmultident',
-                'cagecmplx',
-                'aminoacids',
-                'biomolecules',
-                'saccharides'
-            ];
+            let roster = WebMolKit.TEMPLATE_FILES.slice(0);
             TemplateBank.RESOURCE_LIST = roster.slice(0);
             TemplateBank.RESOURCE_DATA = [];
             let grabNext = () => {
@@ -20508,7 +20631,7 @@ var WebMolKit;
         }
         render(parent) {
             super.render(parent);
-            let grid = $('<div></div>').appendTo(this.content);
+            let grid = $('<div/>').appendTo(this.content);
             grid.css('display', 'grid');
             grid.css('align-items', 'center');
             grid.css('justify-content', 'start');
@@ -20518,23 +20641,24 @@ var WebMolKit;
                 columns += '[btn' + n + '] auto ';
             columns += '[btnX] 1fr [end]';
             grid.css('grid-template-columns', columns);
-            let underline = $('<div></div>').appendTo(grid);
+            let underline = $('<div/>').appendTo(grid);
             underline.css('grid-column', 'start / end');
             underline.css('grid-row', '1');
             underline.css('border-bottom', '1px solid #C0C0C0');
             underline.css('height', '100%');
             for (let n = 0; n < this.options.length; n++) {
-                let outline = $('<div class="wmk-tabbar-cell"></div>').appendTo(grid);
+                let outline = $('<div class="wmk-tabbar-cell"/>').appendTo(grid);
                 outline.css('grid-column', 'btn' + n);
                 outline.css('grid-row', '1');
-                let btn = $('<div class="wmk-tabbar"></div>').appendTo(outline);
+                let btn = $('<div class="wmk-tabbar"/>').appendTo(outline);
                 btn.css('padding', this.padding + 'px');
                 this.buttonDiv.push(btn);
-                let panel = $('<div></div>').appendTo(grid);
+                let panel = $('<div/>').appendTo(grid);
                 panel.css('grid-column', 'start / end');
                 panel.css('grid-row', '2');
                 panel.css('align-self', 'start');
                 panel.css('justify-self', 'center');
+                panel.css({ 'width': '100%' });
                 this.panelDiv.push(panel);
             }
             this.updateButtons();
@@ -20820,6 +20944,9 @@ var WebMolKit;
             this.callbackApply = callbackApply;
             this.newX = 0;
             this.newY = 0;
+            this.abbrevList = null;
+            this.svgAbbrev = null;
+            this.currentAbbrev = -1;
             this.initMol = mol;
             this.mol = mol.clone();
             this.title = 'Edit Atom';
@@ -20843,11 +20970,13 @@ var WebMolKit;
         }
         applyChanges() {
             this.updateMolecule();
+            if (this.tabs.getSelectedValue() == 'Abbreviation')
+                this.updateAbbrev();
             if (this.callbackApply)
                 this.callbackApply(this);
         }
         populateAtom(panel) {
-            let grid = $('<div></div>').appendTo(panel);
+            let grid = $('<div/>').appendTo(panel);
             grid.css('display', 'grid');
             grid.css('align-items', 'center');
             grid.css('justify-content', 'start');
@@ -20855,29 +20984,29 @@ var WebMolKit;
             grid.css('grid-column-gap', '0.5em');
             grid.css('grid-template-columns', '[start col0] auto [col1] auto [col2] auto [col3] auto [col4 end]');
             grid.append('<div style="grid-area: 1 / col0;">Symbol</div>');
-            this.inputSymbol = $('<input size="20"></input>').appendTo(grid);
+            this.inputSymbol = $('<input size="20"/>').appendTo(grid);
             this.inputSymbol.css('grid-area', '1 / col1 / auto / col4');
             grid.append('<div style="grid-area: 2 / col0;">Charge</div>');
-            this.inputCharge = $('<input type="number" size="6"></input>').appendTo(grid);
+            this.inputCharge = $('<input type="number" size="6"/>').appendTo(grid);
             this.inputCharge.css('grid-area', '2 / col1');
             grid.append('<div style="grid-area: 2 / col2;">Unpaired</div>');
-            this.inputUnpaired = $('<input type="number" size="6"></input>').appendTo(grid);
+            this.inputUnpaired = $('<input type="number" size="6"/>').appendTo(grid);
             this.inputUnpaired.css('grid-area', '2 / col3');
             grid.append('<div style="grid-area: 3 / col0;">Hydrogens</div>');
             this.optionHydrogen = new WebMolKit.OptionList(['Auto', 'Explicit']);
-            this.optionHydrogen.render($('<div style="grid-area: 3 / col1 / auto / col3"></div>').appendTo(grid));
-            this.inputHydrogen = $('<input type="number" size="6"></input>').appendTo(grid);
+            this.optionHydrogen.render($('<div style="grid-area: 3 / col1 / auto / col3"/>').appendTo(grid));
+            this.inputHydrogen = $('<input type="number" size="6"/>').appendTo(grid);
             this.inputHydrogen.css('grid-area', '3 / col3');
             grid.append('<div style="grid-area: 4 / col0;">Isotope</div>');
             this.optionIsotope = new WebMolKit.OptionList(['Natural', 'Enriched']);
-            this.optionIsotope.render($('<div style="grid-area: 4 / col1 / auto / col3"></div>').appendTo(grid));
-            this.inputIsotope = $('<input type="number" size="6"></input>').appendTo(grid);
+            this.optionIsotope.render($('<div style="grid-area: 4 / col1 / auto / col3"/>').appendTo(grid));
+            this.inputIsotope = $('<input type="number" size="6"/>').appendTo(grid);
             this.inputIsotope.css('grid-area', '4 / col3');
             grid.append('<div style="grid-area: 5 / col0;">Mapping</div>');
-            this.inputMapping = $('<input type="number" size="6"></input>').appendTo(grid);
+            this.inputMapping = $('<input type="number" size="6"/>').appendTo(grid);
             this.inputMapping.css('grid-area', '5 / col1');
             grid.append('<div style="grid-area: 5 / col2;">Index</div>');
-            this.inputIndex = $('<input type="number" size="6" readonly="readonly"></input>').appendTo(grid);
+            this.inputIndex = $('<input type="number" size="6" readonly="readonly"/>').appendTo(grid);
             this.inputIndex.css('grid-area', '5 / col3');
             grid.find('input').css('font', 'inherit');
             const mol = this.mol, atom = this.atom;
@@ -20904,7 +21033,29 @@ var WebMolKit;
             }
         }
         populateAbbreviation(panel) {
-            panel.append('Abbreviations: TODO');
+            let divFlex = $('<div/>').appendTo(panel).css({ 'display': 'flex', 'align-items': 'flex-start' });
+            divFlex.css({ 'max-width': '60vw', 'max-height': '50vh', 'overflow-y': 'scroll' });
+            let spanSearch = $('<div/>').appendTo(divFlex).css({ 'margin-right': '0.5em', 'flex': '0 0' });
+            let spanList = $('<div/>').appendTo(divFlex).css({ 'flex': '1 1 100%' });
+            this.inputAbbrevSearch = $('<input size="10"/>').appendTo(spanSearch);
+            this.inputAbbrevSearch.attr('placeholder', 'Search');
+            let lastSearch = '';
+            this.inputAbbrevSearch.on('input', () => {
+                let search = this.inputAbbrevSearch.val();
+                if (search == lastSearch)
+                    return;
+                lastSearch = search;
+                this.fillAbbreviations();
+            });
+            let divButtons = $('<div/>').appendTo(spanSearch).css({ 'margin-top': '0.5em' });
+            let btnClear = $('<button class="wmk-button wmk-button-default">Clear</button>').appendTo(divButtons);
+            btnClear.click(() => {
+                this.selectAbbreviation(-1);
+                if (this.atom > 0 && WebMolKit.MolUtil.hasAbbrev(this.mol, this.atom))
+                    this.applyChanges();
+            });
+            this.tableAbbrev = $('<table/>').appendTo(spanList).css({ 'border-collapse': 'collapse' });
+            this.fillAbbreviations();
         }
         populateGeometry(panel) {
             panel.append('Geometry: TODO');
@@ -20916,9 +21067,9 @@ var WebMolKit;
             panel.append('Extra: TODO');
         }
         updateMolecule() {
-            let mol = this.mol, atom = this.atom;
+            let { mol, atom } = this;
             if (atom == 0)
-                atom = mol.addAtom('C', this.newX, this.newY);
+                atom = this.atom = mol.addAtom('C', this.newX, this.newY);
             let sym = this.inputSymbol.val();
             if (sym != '')
                 mol.setAtomElement(atom, sym);
@@ -20945,6 +21096,83 @@ var WebMolKit;
             let map = parseInt(this.inputMapping.val());
             if (!isNaN(map))
                 mol.setAtomMapNum(atom, map);
+        }
+        updateAbbrev() {
+            const { mol, atom } = this;
+            if (this.currentAbbrev < 0) {
+                let el = mol.atomElement(atom);
+                WebMolKit.MolUtil.clearAbbrev(mol, atom);
+                mol.setAtomElement(atom, el);
+            }
+            else {
+                let abbrev = this.abbrevList[this.currentAbbrev];
+                mol.setAtomElement(atom, abbrev.name);
+                WebMolKit.MolUtil.setAbbrev(mol, atom, abbrev.frag);
+            }
+        }
+        fillAbbreviations() {
+            if (WebMolKit.AbbrevContainer.needsSetup()) {
+                setTimeout(() => WebMolKit.AbbrevContainer.setupData().then(() => this.fillAbbreviations()), 1);
+                return;
+            }
+            this.tableAbbrev.empty();
+            WebMolKit.AbbrevContainer.main.submitMolecule(this.mol, true);
+            this.abbrevList = WebMolKit.AbbrevContainer.main.getAbbrevs();
+            if (!this.svgAbbrev) {
+                this.svgAbbrev = [];
+                let policy = WebMolKit.RenderPolicy.defaultColourOnWhite(10);
+                let measure = new WebMolKit.OutlineMeasurement(0, 0, policy.data.pointScale);
+                for (let abbrev of this.abbrevList) {
+                    let effects = new WebMolKit.RenderEffects();
+                    let layout = new WebMolKit.ArrangeMolecule(abbrev.frag, measure, policy, effects);
+                    layout.arrange();
+                    let gfx = new WebMolKit.MetaVector();
+                    new WebMolKit.DrawMolecule(layout, gfx).draw();
+                    gfx.normalise();
+                    this.svgAbbrev.push(gfx.createSVG());
+                }
+                const { mol, atom } = this;
+                if (WebMolKit.MolUtil.hasAbbrev(mol, atom)) {
+                    let name = mol.atomElement(atom), mf = WebMolKit.MolUtil.molecularFormula(WebMolKit.MolUtil.getAbbrev(mol, atom));
+                    for (let n = 0; n < this.abbrevList.length; n++)
+                        if (name == this.abbrevList[n].name) {
+                            if (mf == WebMolKit.MolUtil.molecularFormula(this.abbrevList[n].frag))
+                                this.currentAbbrev = n;
+                            break;
+                        }
+                }
+            }
+            let tr = $('<tr/>').appendTo(this.tableAbbrev);
+            tr.append('<td><u>Label</u></td>');
+            tr.append('<td><u>Structure</u></td>');
+            this.abbrevEntries = [];
+            let search = this.inputAbbrevSearch.val().toLowerCase();
+            for (let n = 0; n < this.abbrevList.length; n++) {
+                if (this.currentAbbrev != n && !this.abbrevList[n].name.toLowerCase().includes(search))
+                    continue;
+                let entry = {
+                    'tr': $('<tr/>').appendTo(this.tableAbbrev),
+                    'idx': n,
+                    'bgcol': this.abbrevEntries.length % 2 == 0 ? '#FFFFFF' : '#F8F8F8'
+                };
+                entry.tr.css('background-color', this.currentAbbrev == entry.idx ? WebMolKit.colourCode(WebMolKit.Theme.lowlight) : entry.bgcol);
+                let tdLabel = $('<td/>').appendTo(entry.tr), tdStruct = $('<td/>').appendTo(entry.tr);
+                tdLabel.html(this.abbrevList[n].name);
+                let svg = $(this.svgAbbrev[n]).appendTo(tdStruct);
+                svg.css({ 'pointer-events': 'none' });
+                entry.tr.css({ 'cursor': 'pointer' });
+                entry.tr.click(() => this.selectAbbreviation(n));
+                entry.tr.dblclick(() => this.applyChanges());
+                this.abbrevEntries.push(entry);
+            }
+        }
+        selectAbbreviation(idx) {
+            if (this.currentAbbrev == idx)
+                return;
+            this.currentAbbrev = idx;
+            for (let entry of this.abbrevEntries) {
+                entry.tr.css('background-color', this.currentAbbrev == entry.idx ? WebMolKit.colourCode(WebMolKit.Theme.lowlight) : entry.bgcol);
+            }
         }
     }
     WebMolKit.EditAtom = EditAtom;
@@ -21111,7 +21339,7 @@ var WebMolKit;
             if (!this.width || !this.height)
                 throw 'Sketcher.render called without width and height';
             super.render(parent);
-            this.container = $('<div></div>').appendTo(this.content);
+            this.container = $('<div/>').appendTo(this.content);
             this.container.css({ 'position': 'relative', 'width': this.width + 'px', 'height': this.height + 'px' });
             this.container.css('background-color', WebMolKit.colourCanvas(this.background));
             if (this.border != WebMolKit.MetaVector.NOCOLOUR) {
@@ -21125,7 +21353,7 @@ var WebMolKit;
             this.canvasUnder = WebMolKit.newElement(this.container, 'canvas', { 'width': this.width, 'height': this.height, 'style': canvasStyle });
             this.canvasMolecule = WebMolKit.newElement(this.container, 'canvas', { 'width': this.width, 'height': this.height, 'style': canvasStyle });
             this.canvasOver = WebMolKit.newElement(this.container, 'canvas', { 'width': this.width, 'height': this.height, 'style': canvasStyle });
-            this.divMessage = $('<div></div>').appendTo(this.container);
+            this.divMessage = $('<div/>').appendTo(this.container);
             this.divMessage.attr('style', canvasStyle);
             this.divMessage.css({ 'width': this.width + 'px', 'height': this.height + 'px' });
             this.divMessage.css({ 'text-align': 'center', 'vertical-align': 'middle', 'font-weight': 'bold', 'font-size': '120%' });
@@ -24186,6 +24414,7 @@ var WebMolKit;
     class Popup {
         constructor(parent) {
             this.parent = parent;
+            this.popupBackground = 'white';
             this.callbackClose = null;
             this.callbackPopulate = null;
             WebMolKit.installInlineCSS('popup', CSS_POPUP);
@@ -24195,25 +24424,17 @@ var WebMolKit;
         }
         open() {
             let body = $(document.documentElement);
-            let bg = this.obscureBackground = $('<div></div>').appendTo(body);
-            bg.css('width', '100%');
-            bg.css('height', document.documentElement.clientHeight + 'px');
-            bg.css('background-color', 'black');
-            bg.css('opacity', 0.2);
-            bg.css('position', 'absolute');
-            bg.css('left', 0);
-            bg.css('top', 0);
-            bg.css('z-index', 9999);
+            let bg = this.obscureBackground = $('<div/>').appendTo(body);
+            bg.css({ 'width': '100%', 'height': document.documentElement.clientHeight + 'px' });
+            bg.css({ 'background-color': 'black', 'opacity': 0.2 });
+            bg.css({ 'position': 'absolute', 'left': 0, 'top': 0, 'z-index': 19999 });
             bg.click(() => this.close());
             this.obscureBackground = bg;
-            let pb = this.panelBoundary = $('<div class="wmk-popup"></div>').appendTo(body);
+            let pb = this.panelBoundary = $('<div class="wmk-popup"/>').appendTo(body);
             pb.click((event) => event.stopPropagation());
-            pb.css('background-color', 'white');
-            pb.css('border', '1px solid black');
-            pb.css('position', 'absolute');
-            pb.css('z-index', 10000);
-            let bd = this.bodyDiv = $('<div></div>').appendTo(pb);
-            bd.css('padding', '0.5em');
+            pb.css({ 'background-color': this.popupBackground, 'border': '1px solid black' });
+            pb.css({ 'position': 'absolute', 'z-index': 20000 });
+            this.bodyDiv = $('<div/>').appendTo(pb).css('padding', '0.5em');
             bg.show();
             this.populate();
             this.positionAndShow();
@@ -24479,6 +24700,85 @@ var WebMolKit;
     }
     WebMolKit.XML = XML;
 })(WebMolKit || (WebMolKit = {}));
+var wmk = WebMolKit;
+var Vec = WebMolKit.Vec;
+var pixelDensity = WebMolKit.pixelDensity;
+var drawLine = WebMolKit.drawLine;
+var escapeHTML = WebMolKit.escapeHTML;
+var pathRoundedRect = WebMolKit.pathRoundedRect;
+var eventCoords = WebMolKit.eventCoords;
+var clone = WebMolKit.clone;
+var deepClone = WebMolKit.deepClone;
+var orBlank = WebMolKit.orBlank;
+var blendRGB = WebMolKit.blendRGB;
+var colourCode = WebMolKit.colourCode;
+var TWOPI = WebMolKit.TWOPI;
+var norm_xy = WebMolKit.norm_xy;
+var newElement = WebMolKit.newElement;
+var Mixtures;
+(function (Mixtures) {
+    $ = window['$'] || require('./jquery.js');
+    Mixtures.ON_DESKTOP = false;
+    let BASE_APP = '';
+    function runMixfileEditor(resURL, rootID) {
+        let root = $('#' + rootID);
+        Mixtures.ON_DESKTOP = true;
+        wmk.initWebMolKit(resURL);
+        const path = require('path');
+        const electron = require('electron');
+        const process = require('process');
+        process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = true;
+        BASE_APP = path.normalize('file:/' + __dirname);
+        let url = window.location.href.substring(0, window.location.href.lastIndexOf('/'));
+        wmk.Theme.RESOURCE_URL = path.normalize(url + '/res');
+        let params = window.location.search.substring(1).split('&');
+        let panelClass = null;
+        let filename = null;
+        for (let p of params) {
+            let eq = p.indexOf('=');
+            if (eq < 0)
+                continue;
+            let key = p.substring(0, eq), val = decodeURIComponent(p.substring(eq + 1));
+            if (key == 'panel')
+                panelClass = val;
+            else if (key == 'fn')
+                filename = val;
+        }
+        if (!panelClass && filename && filename.endsWith('.json'))
+            panelClass = 'CollectionPanel';
+        let proxyClip = new wmk.ClipboardProxy();
+        const { clipboard } = electron;
+        proxyClip.getString = () => clipboard.readText();
+        proxyClip.setString = (str) => clipboard.writeText(str);
+        proxyClip.setHTML = (html) => clipboard.writeHTML(html);
+        proxyClip.canSetHTML = () => true;
+        proxyClip.canAlwaysGet = () => true;
+        if (!panelClass) {
+            let dw = new Mixtures.MixturePanel(root, proxyClip);
+            if (filename)
+                dw.loadFile(filename);
+        }
+        else {
+            let proto = Mixtures[panelClass];
+            if (!proto)
+                throw 'Unknown class: ' + panelClass;
+            let dw = new proto(root, proxyClip);
+            if (filename)
+                dw.loadFile(filename);
+        }
+    }
+    Mixtures.runMixfileEditor = runMixfileEditor;
+    function openNewWindow(panelClass, filename) {
+        const electron = require('electron');
+        const WEBPREF = { 'nodeIntegration': true };
+        let bw = new electron.remote.BrowserWindow({ 'width': 900, 'height': 800, 'icon': 'app/img/icon.png', 'webPreferences': WEBPREF });
+        let url = BASE_APP + '/index.html?panel=' + panelClass;
+        if (filename)
+            url += '&fn=' + encodeURIComponent(filename);
+        bw.loadURL(url);
+    }
+    Mixtures.openNewWindow = openNewWindow;
+})(Mixtures || (Mixtures = {}));
 var Mixtures;
 (function (Mixtures) {
     Mixtures.MIXFILE_VERSION = 1.00;
@@ -24807,85 +25107,6 @@ var Mixtures;
     Units.NAME_TO_URI = {};
     Units.URI_TO_MINCHI = {};
     Mixtures.Units = Units;
-})(Mixtures || (Mixtures = {}));
-var wmk = WebMolKit;
-var Vec = WebMolKit.Vec;
-var pixelDensity = WebMolKit.pixelDensity;
-var drawLine = WebMolKit.drawLine;
-var escapeHTML = WebMolKit.escapeHTML;
-var pathRoundedRect = WebMolKit.pathRoundedRect;
-var eventCoords = WebMolKit.eventCoords;
-var clone = WebMolKit.clone;
-var deepClone = WebMolKit.deepClone;
-var orBlank = WebMolKit.orBlank;
-var blendRGB = WebMolKit.blendRGB;
-var colourCode = WebMolKit.colourCode;
-var TWOPI = WebMolKit.TWOPI;
-var norm_xy = WebMolKit.norm_xy;
-var newElement = WebMolKit.newElement;
-var Mixtures;
-(function (Mixtures) {
-    $ = window['$'] || require('./jquery.js');
-    Mixtures.ON_DESKTOP = false;
-    let BASE_APP = '';
-    function runMixfileEditor(resURL, rootID) {
-        let root = $('#' + rootID);
-        Mixtures.ON_DESKTOP = true;
-        wmk.initWebMolKit(resURL);
-        const path = require('path');
-        const electron = require('electron');
-        const process = require('process');
-        process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = true;
-        BASE_APP = path.normalize('file:/' + __dirname);
-        let url = window.location.href.substring(0, window.location.href.lastIndexOf('/'));
-        wmk.Theme.RESOURCE_URL = path.normalize(url + '/res');
-        let params = window.location.search.substring(1).split('&');
-        let panelClass = null;
-        let filename = null;
-        for (let p of params) {
-            let eq = p.indexOf('=');
-            if (eq < 0)
-                continue;
-            let key = p.substring(0, eq), val = decodeURIComponent(p.substring(eq + 1));
-            if (key == 'panel')
-                panelClass = val;
-            else if (key == 'fn')
-                filename = val;
-        }
-        if (!panelClass && filename && filename.endsWith('.json'))
-            panelClass = 'CollectionPanel';
-        let proxyClip = new wmk.ClipboardProxy();
-        const { clipboard } = electron;
-        proxyClip.getString = () => clipboard.readText();
-        proxyClip.setString = (str) => clipboard.writeText(str);
-        proxyClip.setHTML = (html) => clipboard.writeHTML(html);
-        proxyClip.canSetHTML = () => true;
-        proxyClip.canAlwaysGet = () => true;
-        if (!panelClass) {
-            let dw = new Mixtures.MixturePanel(root, proxyClip);
-            if (filename)
-                dw.loadFile(filename);
-        }
-        else {
-            let proto = Mixtures[panelClass];
-            if (!proto)
-                throw 'Unknown class: ' + panelClass;
-            let dw = new proto(root, proxyClip);
-            if (filename)
-                dw.loadFile(filename);
-        }
-    }
-    Mixtures.runMixfileEditor = runMixfileEditor;
-    function openNewWindow(panelClass, filename) {
-        const electron = require('electron');
-        const WEBPREF = { 'nodeIntegration': true };
-        let bw = new electron.remote.BrowserWindow({ 'width': 900, 'height': 800, 'icon': 'app/img/icon.png', 'webPreferences': WEBPREF });
-        let url = BASE_APP + '/index.html?panel=' + panelClass;
-        if (filename)
-            url += '&fn=' + encodeURIComponent(filename);
-        bw.loadURL(url);
-    }
-    Mixtures.openNewWindow = openNewWindow;
 })(Mixtures || (Mixtures = {}));
 var Mixtures;
 (function (Mixtures) {
@@ -25713,7 +25934,7 @@ var Mixtures;
             let div = $('<div/>').appendTo(parent);
             div.css('grid-column', 'value');
             div.css('grid-row', row.toString());
-            let input = $('<input></input>').appendTo(div);
+            let input = $('<input/>').appendTo(div);
             input.css({ 'width': '100%', 'font': 'inherit' });
             return input;
         }
@@ -25891,7 +26112,6 @@ var Mixtures;
             this.content.mouseover((event) => this.mouseOver(event));
             this.content.mouseout((event) => this.mouseOut(event));
             this.content.mousemove((event) => this.mouseMove(event));
-            this.content.on('mousewheel', (event) => this.mouseWheel(event));
             this.content.keypress((event) => this.keyPressed(event));
             this.content.keydown((event) => this.keyDown(event));
             this.content.keyup((event) => this.keyUp(event));
@@ -26374,7 +26594,7 @@ var Mixtures;
                 menu.append(new electron.remote.MenuItem({ 'label': 'Zoom In', 'click': () => this.zoom(1.25) }));
                 menu.append(new electron.remote.MenuItem({ 'label': 'Zoom Out', 'click': () => this.zoom(0.8) }));
             }
-            menu.popup(electron.remote.getCurrentWindow());
+            menu.popup({ 'window': electron.remote.getCurrentWindow() });
         }
     }
     Mixtures.EditMixture = EditMixture;
@@ -26751,7 +26971,7 @@ var Mixtures;
         menuAction(cmd) {
             if (cmd == Mixtures.MenuBannerCommand.NewMixture)
                 Mixtures.openNewWindow('MixturePanel');
-            if (cmd == Mixtures.MenuBannerCommand.NewCollection)
+            else if (cmd == Mixtures.MenuBannerCommand.NewCollection)
                 Mixtures.openNewWindow('CollectionPanel');
             else if (cmd == Mixtures.MenuBannerCommand.Open)
                 this.actionFileOpen();
@@ -27015,14 +27235,15 @@ var Mixtures;
                     { 'name': 'Mixfile', 'extensions': ['mixfile'] },
                 ]
             };
-            dialog.showOpenDialog(params, (filenames) => {
-                if (filenames)
-                    for (let fn of filenames) {
-                        if (fn.endsWith('.mixfile'))
-                            Mixtures.openNewWindow('MixturePanel', fn);
-                        else
-                            Mixtures.openNewWindow('CollectionPanel', fn);
-                    }
+            dialog.showOpenDialog(params).then((value) => {
+                if (value.canceled)
+                    return;
+                for (let fn of value.filePaths) {
+                    if (fn.endsWith('.mixfile'))
+                        Mixtures.openNewWindow('MixturePanel', fn);
+                    else
+                        Mixtures.openNewWindow('CollectionPanel', fn);
+                }
             });
         }
         actionFileSave() {
@@ -27047,11 +27268,11 @@ var Mixtures;
                     { 'name': 'Mixfile Collection', 'extensions': ['json'] }
                 ]
             };
-            dialog.showSaveDialog({}, (filename) => {
-                if (!filename)
+            dialog.showSaveDialog({}).then((value) => {
+                if (value.canceled)
                     return;
-                this.saveFile(filename);
-                this.filename = filename;
+                this.saveFile(value.filePath);
+                this.filename = value.filePath;
                 this.isDirty = false;
                 this.updateTitle();
             });
@@ -27367,19 +27588,20 @@ var Mixtures;
                     { 'name': 'Mixfile Collection', 'extensions': ['json'] },
                 ]
             };
-            dialog.showOpenDialog(params, (filenames) => {
+            dialog.showOpenDialog(params).then((value) => {
+                if (value.canceled)
+                    return;
                 let inPlace = this.editor.getMixture().isEmpty();
-                if (filenames)
-                    for (let fn of filenames) {
-                        if (inPlace && fn.endsWith('.mixfile')) {
-                            this.loadFile(fn);
-                            inPlace = false;
-                        }
-                        else if (fn.endsWith('.json'))
-                            Mixtures.openNewWindow('CollectionPanel', fn);
-                        else
-                            Mixtures.openNewWindow('MixturePanel', fn);
+                for (let fn of value.filePaths) {
+                    if (inPlace && fn.endsWith('.mixfile')) {
+                        this.loadFile(fn);
+                        inPlace = false;
                     }
+                    else if (fn.endsWith('.json'))
+                        Mixtures.openNewWindow('CollectionPanel', fn);
+                    else
+                        Mixtures.openNewWindow('MixturePanel', fn);
+                }
             });
         }
         actionFileSave() {
@@ -27404,11 +27626,11 @@ var Mixtures;
                     { 'name': 'Mixfile', 'extensions': ['mixfile'] }
                 ]
             };
-            dialog.showSaveDialog({}, (filename) => {
-                if (!filename)
+            dialog.showSaveDialog({}).then((value) => {
+                if (value.canceled)
                     return;
-                this.saveFile(filename);
-                this.filename = filename;
+                this.saveFile(value.filePath);
+                this.filename = value.filePath;
                 this.editor.setDirty(false);
                 this.updateTitle();
             });
@@ -27430,8 +27652,10 @@ var Mixtures;
             };
             if (this.filename && this.filename.endsWith('.mixfile'))
                 params.defaultPath = (this.filename.substring(0, this.filename.length - 8) + '.sdf').split(/[\/\\]/).pop();
-            dialog.showSaveDialog(params, (filename) => {
-                fs.writeFile(filename, sdfile, (err) => {
+            dialog.showSaveDialog({}).then((value) => {
+                if (value.canceled)
+                    return;
+                fs.writeFile(value.filePath, sdfile, (err) => {
                     if (err)
                         alert('Unable to save: ' + err);
                 });
@@ -27446,7 +27670,9 @@ var Mixtures;
                     { 'name': 'Scalable Vector Graphics', 'extensions': ['svg'] }
                 ]
             };
-            dialog.showSaveDialog(params, (filename) => {
+            dialog.showSaveDialog({}).then((value) => {
+                if (value.canceled)
+                    return;
                 let policy = wmk.RenderPolicy.defaultColourOnWhite();
                 let measure = new wmk.OutlineMeasurement(0, 0, policy.data.pointScale);
                 let layout = new Mixtures.ArrangeMixture(this.editor.getMixture(), measure, policy);
@@ -27456,7 +27682,7 @@ var Mixtures;
                 gfx.normalise();
                 let svg = gfx.createSVG();
                 const fs = require('fs');
-                fs.writeFile(filename, svg, (err) => {
+                fs.writeFile(value.filePath, svg, (err) => {
                     if (err)
                         alert('Unable to save: ' + err);
                 });
