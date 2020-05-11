@@ -89,7 +89,14 @@
 		selectIcon(0);
 	})();
 
-	let btnMInChI = $('<button; class="wmk-button wmk-button-primary">Create MInChI</button>').appendTo($('#buttons'));
+	let divButtons = $('#buttons');
+
+	let btnClear = $('<button class="wmk-button wmk-button-default">Clear</button>').appendTo(divButtons);
+	btnClear.click(() => widget.setMixture(new mix.Mixture()));
+
+	divButtons.append(' ');
+
+	let btnMInChI = $('<button class="wmk-button wmk-button-primary">Create MInChI</button>').appendTo(divButtons);
 	btnMInChI.click(() => 
 	{
 		if (widget.isBlank())

@@ -123,6 +123,11 @@ var WebMolKit;
             arr.fill(val);
             return arr;
         }
+        static genericArray(val, sz) {
+            let arr = new Array(sz);
+            arr.fill(val);
+            return arr;
+        }
         static first(arr) { return arr == null || arr.length == 0 ? null : arr[0]; }
         static last(arr) { return arr == null || arr.length == 0 ? null : arr[arr.length - 1]; }
         static min(arr) {
@@ -189,6 +194,12 @@ var WebMolKit;
                 ret[n] = n + 1;
             return ret;
         }
+        static identityN(start, sz) {
+            let ret = new Array(sz);
+            for (let n = 0; n < sz; n++)
+                ret[n] = n + start;
+            return ret;
+        }
         static notMask(mask) {
             let ret = new Array(mask.length);
             for (let n = mask.length - 1; n >= 0; n--)
@@ -202,6 +213,8 @@ var WebMolKit;
             return ret;
         }
         static maskCount(mask) {
+            if (!mask)
+                return 0;
             let c = 0;
             for (let n = mask.length - 1; n >= 0; n--)
                 if (mask[n])
@@ -926,7 +939,7 @@ var WebMolKit;
         let lines = JSON.stringify(json, null, 1).split(/\n/);
         for (let n = 0; n < lines.length; n++) {
             lines[n] = lines[n].trim();
-            if (lines[n].length > 1 && lines[n].endsWith('{') || lines[n].endsWith('[')) {
+            if (lines[n].length > 1 && (lines[n].endsWith('{') || lines[n].endsWith('['))) {
                 let ch = lines[n].charAt(lines[n].length - 1);
                 lines[n] = lines[n].substring(0, lines[n].length - 1);
                 lines.splice(n + 1, 0, ch);
@@ -936,7 +949,7 @@ var WebMolKit;
         let indent = 0;
         for (let n = 0; n < lines.length; n++) {
             let orig = lines[n];
-            if (orig == ']' || orig == '}')
+            if (orig == ']' || orig == '}' || orig == '],' || orig == '},')
                 indent--;
             lines[n] = '\t'.repeat(indent) + orig;
             if (orig == '[' || orig == '{')
@@ -981,6 +994,12 @@ var WebMolKit;
         });
     }
     WebMolKit.readTextURL = readTextURL;
+    function yieldDOM() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve) => setTimeout(() => resolve()));
+        });
+    }
+    WebMolKit.yieldDOM = yieldDOM;
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
 (function (WebMolKit) {
@@ -1058,7 +1077,7 @@ var WebMolKit;
                         let inRow = rowData[r], outRow = WebMolKit.Vec.maskGet(inRow, colMask);
                         data.rowData.push(outRow);
                     }
-            const { colData: outCols, rowData: outRows } = data;
+            const { 'colData': outCols, 'rowData': outRows } = data;
             for (let c = outCols.length - 1; c >= 0; c--)
                 if (outCols[c].type == "molecule") {
                     for (let r = outRows.length - 1; r >= 0; r--)
@@ -2490,6 +2509,12 @@ var WebMolKit;
             this.x += dx;
             this.y += dy;
         }
+        grow(bx, by) {
+            this.x -= bx;
+            this.y -= by;
+            this.w += 2 * bx;
+            this.h += 2 * by;
+        }
         intersects(other) {
             return GeomUtil.rectsIntersect(this.x, this.y, this.w, this.h, other.x, other.y, other.w, other.h);
         }
@@ -3478,6 +3503,13 @@ var WebMolKit;
             }
             let ox = 0.5 * (box.w - nw), oy = 0.5 * (box.h - nh);
             this.transformPrimitives(box.x + ox, box.y + oy, scale, scale);
+        }
+        scaleExtent(maxWidth, maxHeight) {
+            let w = this.highX - this.lowX, h = this.highY - this.lowY;
+            if (w <= maxWidth && h <= maxHeight)
+                return;
+            let scale = Math.min(maxWidth / w, maxHeight / h);
+            this.transformPrimitives(0, 0, scale, scale);
         }
         transformPrimitives(ox, oy, sw, sh) {
             if (ox == 0 && oy == 0 && sw == 1 && sh == 1)
@@ -5212,6 +5244,8 @@ var WebMolKit;
     Molecule.BONDTYPE_UNKNOWN = 3;
     Molecule.HYVALENCE_EL = ['C', 'N', 'O', 'S', 'P'];
     Molecule.HYVALENCE_VAL = [4, 3, 2, 2, 3];
+    Molecule.PREFIX_EXTRA = 'x';
+    Molecule.PREFIX_TRANSIENT = 'y';
     WebMolKit.Molecule = Molecule;
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
@@ -6117,6 +6151,9 @@ var WebMolKit;
                 }
         }
         static convertToAbbrev(mol, srcmask, abbrevName) {
+            return this.convertToAbbrevIndex(mol, srcmask, abbrevName)[0];
+        }
+        static convertToAbbrevIndex(mol, srcmask, abbrevName) {
             let junction = 0;
             for (let n = 1; n <= mol.numBonds; n++) {
                 let b1 = mol.bondFrom(n), b2 = mol.bondTo(n), atom = 0;
@@ -6168,7 +6205,7 @@ var WebMolKit;
             let newatom = newmol.addAtom(abbrevName, x, y);
             newmol.addBond(molidx, newatom, bondOrder);
             MolUtil.setAbbrev(newmol, newatom, frag);
-            return newmol;
+            return [newmol, newatom];
         }
         static expandAbbrevs(mol, alignCoords) {
             while (true) {
@@ -6601,7 +6638,7 @@ var WebMolKit;
                 return false;
             if (mol.atomIsotope(atom) != WebMolKit.Molecule.ISOTOPE_NATURAL)
                 return false;
-            if (mol.atomExtra(atom) != null || mol.atomTransient(atom) != null)
+            if (WebMolKit.Vec.notBlank(mol.atomExtra(atom)) || WebMolKit.Vec.notBlank(mol.atomTransient(atom)))
                 return false;
             if (mol.atomAdjCount(atom) != 1)
                 return false;
@@ -7492,6 +7529,14 @@ var WebMolKit;
             this.openmol = new WebMolKit.OpenMolSpec();
             this.atomHyd = null;
             this.resBonds = null;
+            this.explicitValence = [];
+            this.groupAttachAny = new Map();
+            this.groupAttachAll = new Map();
+            this.groupStereoAbsolute = [];
+            this.groupStereoRacemic = [];
+            this.groupStereoRelative = [];
+            this.groupLinkNodes = [];
+            this.groupMixtures = [];
             this.pos = 0;
             this.lines = strData.split(/\r?\n/);
         }
@@ -7528,7 +7573,6 @@ var WebMolKit;
             }
             let numAtoms = parseInt(line.substring(0, 3).trim());
             let numBonds = parseInt(line.substring(3, 6).trim());
-            let explicitValence = [];
             for (let n = 0; n < numAtoms; n++) {
                 line = this.nextLine();
                 if (line.length < 39)
@@ -7566,7 +7610,7 @@ var WebMolKit;
                 }
                 if (stereo > 0 && this.keepParity) {
                 }
-                explicitValence.push(val);
+                this.explicitValence.push(val);
             }
             for (let n = 0; n < numBonds; n++) {
                 line = this.nextLine();
@@ -7582,7 +7626,7 @@ var WebMolKit;
                     style = WebMolKit.Molecule.BONDTYPE_INCLINED;
                 else if (stereo == 6)
                     style = WebMolKit.Molecule.BONDTYPE_DECLINED;
-                else if (stereo == 4)
+                else if (stereo == 3 || stereo == 4)
                     style = WebMolKit.Molecule.BONDTYPE_UNKNOWN;
                 let b = this.mol.addBond(bfr, bto, order, style);
                 if (type == 4) {
@@ -7592,6 +7636,7 @@ var WebMolKit;
             }
             const MBLK_CHG = 1, MBLK_RAD = 2, MBLK_ISO = 3, MBLK_RGP = 4, MBLK_HYD = 5, MBLK_ZCH = 6, MBLK_ZBO = 7, MBLK_ZPA = 8, MBLK_ZRI = 9, MBLK_ZAR = 10;
             let resPaths = new Map(), resRings = new Map(), arenes = new Map();
+            let superatoms = new Map(), mixtures = new Map();
             while (true) {
                 line = this.nextLine();
                 if (line.startsWith('M  END'))
@@ -7625,6 +7670,70 @@ var WebMolKit;
                             break;
                         this.mol.setAtomElement(anum, line);
                         continue;
+                    }
+                }
+                else if (line.startsWith('M  STY')) {
+                    let len = parseInt(line.substring(6, 9).trim());
+                    for (let n = 0; n < len; n++) {
+                        let idx = parseInt(line.substring(9 + 8 * n, 13 + 8 * n).trim());
+                        let stype = line.substring(14 + 8 * n, 17 + 8 * n);
+                        if (stype == 'SUP')
+                            superatoms.set(idx, { 'atoms': [], 'name': null });
+                        else if (stype == 'MIX' || stype == 'FOR')
+                            mixtures.set(idx, { 'index': idx, 'parent': 0, 'atoms': [], 'type': stype });
+                    }
+                }
+                else if (line.startsWith('M  SPL')) {
+                    let len = parseInt(line.substring(6, 9).trim());
+                    for (let n = 0; n < len; n++) {
+                        let child = parseInt(line.substring(9 + 8 * n, 13 + 8 * n).trim());
+                        let parent = parseInt(line.substring(13 + 8 * n, 17 + 8 * n).trim());
+                        let mix = mixtures.get(child);
+                        if (mix != null)
+                            mix.parent = parent;
+                    }
+                }
+                else if (line.startsWith('M  SAL')) {
+                    let idx = parseInt(line.substring(6, 10).trim());
+                    let sup = superatoms.get(idx);
+                    if (sup != null) {
+                        let len = parseInt(line.substring(10, 13).trim());
+                        let atoms = WebMolKit.Vec.numberArray(0, len);
+                        for (let n = 0; n < len; n++)
+                            atoms[n] = parseInt(line.substring(13 + 4 * n, 17 + 4 * n).trim());
+                        sup.atoms = WebMolKit.Vec.concat(sup.atoms, atoms);
+                    }
+                    let mix = mixtures.get(idx);
+                    if (mix != null) {
+                        let len = parseInt(line.substring(10, 13).trim());
+                        let atoms = WebMolKit.Vec.numberArray(0, len);
+                        for (let n = 0; n < len; n++)
+                            atoms[n] = parseInt(line.substring(13 + 4 * n, 17 + 4 * n).trim());
+                        mix.atoms = WebMolKit.Vec.concat(mix.atoms, atoms);
+                    }
+                }
+                else if (line.startsWith('M  SMT')) {
+                    let idx = parseInt(line.substring(6, 10).trim());
+                    let sup = superatoms.get(idx);
+                    if (sup != null)
+                        sup.name = line.substring(11).trim();
+                }
+                else if (line.startsWith('M  LIN')) {
+                    let len = parseInt(line.substring(6, 9).trim());
+                    for (let n = 0; n < len; n++) {
+                        let node = {
+                            'atom': parseInt(line.substring(9 + 8 * n, 13 + 8 * n).trim()),
+                            'nbrs': [],
+                            'minRep': 1,
+                            'maxRep': parseInt(line.substring(13 + 8 * n, 17 + 8 * n).trim()),
+                        };
+                        let nbr1 = parseInt(line.substring(17 + 8 * n, 21 + 8 * n).trim());
+                        let nbr2 = parseInt(line.substring(21 + 8 * n, 25 + 8 * n).trim());
+                        if (nbr1 > 0)
+                            node.nbrs.push(nbr1);
+                        if (nbr2 > 0)
+                            node.nbrs.push(nbr2);
+                        this.groupLinkNodes.push(node);
                     }
                 }
                 if (type == MBLK_ZPA || type == MBLK_ZRI || type == MBLK_ZAR) {
@@ -7670,7 +7779,7 @@ var WebMolKit;
                     }
                 }
             }
-            this.postFix(explicitValence);
+            this.postFix();
             if (this.parseExtended) {
                 let artifacts = new WebMolKit.BondArtifact(this.mol);
                 for (let atoms of resPaths.values())
@@ -7681,9 +7790,16 @@ var WebMolKit;
                     artifacts.createArene(atoms);
                 artifacts.rewriteMolecule();
             }
+            for (let key of WebMolKit.Vec.sorted(Array.from(superatoms.keys()))) {
+                let value = superatoms.get(key);
+                superatoms.delete(key);
+                this.applySuperAtom(value, Array.from(superatoms.values()));
+            }
+            for (let key of WebMolKit.Vec.sorted(Array.from(mixtures.keys())))
+                this.groupMixtures.push(mixtures.get(key));
             this.openmol.derive(this.mol);
         }
-        postFix(explicitValence) {
+        postFix() {
             const mol = this.mol;
             for (let n = 1; n <= mol.numAtoms; n++) {
                 let el = mol.atomElement(n);
@@ -7695,7 +7811,7 @@ var WebMolKit;
                     mol.setAtomElement(n, 'H');
                     mol.setAtomIsotope(n, 3);
                 }
-                let valence = explicitValence[n - 1], options = WebMolKit.MDLMOL_VALENCE[el];
+                let valence = this.explicitValence[n - 1], options = WebMolKit.MDLMOL_VALENCE[el];
                 if (valence != 0) {
                     let hcount = valence < 0 || valence > 14 ? 0 : valence;
                     for (let b of mol.atomAdjBonds(n))
@@ -7723,9 +7839,16 @@ var WebMolKit;
             mol.keepTransient = false;
         }
         parseV3000() {
-            let inCTAB = false, inAtom = false, inBond = false;
+            let Section;
+            (function (Section) {
+                Section[Section["ATOM"] = 0] = "ATOM";
+                Section[Section["BOND"] = 1] = "BOND";
+                Section[Section["COLL"] = 2] = "COLL";
+                Section[Section["SGROUP"] = 3] = "SGROUP";
+            })(Section || (Section = {}));
+            let inCTAB = false, section = null;
             let lineCounts = null;
-            let lineAtoms = [], lineBonds = [];
+            let lineAtom = [], lineBond = [], lineColl = [], lineSgroup = [];
             const ERRPFX = 'Invalid MDL MOL V3000: ';
             while (true) {
                 let line = this.nextLine();
@@ -7738,35 +7861,62 @@ var WebMolKit;
                     lineCounts = line.substring(7);
                 else if (line.startsWith('BEGIN CTAB'))
                     inCTAB = true;
-                else if (line.startsWith('END CTAB'))
-                    inCTAB = false;
                 else if (line.startsWith('BEGIN ATOM'))
-                    inAtom = true;
-                else if (line.startsWith('END ATOM'))
-                    inAtom = false;
+                    section = Section.ATOM;
                 else if (line.startsWith('BEGIN BOND'))
-                    inBond = true;
-                else if (line.startsWith('END BOND'))
-                    inBond = false;
-                else if (inCTAB && inAtom && !inBond)
-                    lineAtoms.push(line);
-                else if (inCTAB && inBond && !inAtom)
-                    lineBonds.push(line);
+                    section = Section.BOND;
+                else if (line.startsWith('BEGIN COLLECTION'))
+                    section = Section.COLL;
+                else if (line.startsWith('BEGIN SGROUP'))
+                    section = Section.SGROUP;
+                else if (line.startsWith('END '))
+                    section = null;
+                else if (inCTAB && section == Section.ATOM)
+                    lineAtom.push(line);
+                else if (inCTAB && section == Section.BOND)
+                    lineBond.push(line);
+                else if (inCTAB && section == Section.COLL)
+                    lineColl.push(line);
+                else if (inCTAB && section == Section.SGROUP)
+                    lineSgroup.push(line);
+                else if (inCTAB && section == null) {
+                    if (line.startsWith('LINKNODE ')) {
+                        let bits = this.splitWithQuotes(line.substring(9));
+                        let node = {
+                            'atom': 0,
+                            'nbrs': [],
+                            'minRep': parseInt(bits[0]),
+                            'maxRep': parseInt(bits[1])
+                        };
+                        let nb = parseInt(bits[2]);
+                        let atoms = [];
+                        for (let n = 0; n < nb * 2; n++)
+                            atoms.push(parseInt(bits[3 + n]));
+                        WebMolKit.Vec.sort(atoms);
+                        for (let n = 0; n < atoms.length; n++) {
+                            if (n < atoms.length - 1 && atoms[n] == atoms[n + 1])
+                                node.atom = atoms[n++];
+                            else
+                                node.nbrs.push(atoms[n]);
+                        }
+                        this.groupLinkNodes.push(node);
+                    }
+                }
             }
-            let counts = lineCounts.split('\\s+');
+            let counts = lineCounts.split(/\s+/);
             if (counts.length < 2)
                 throw ERRPFX + 'counts line malformatted';
             let numAtoms = parseInt(counts[0]), numBonds = parseInt(counts[1]);
-            if (numAtoms < 0 || numAtoms > lineAtoms.length)
+            if (numAtoms < 0 || numAtoms > lineAtom.length)
                 throw ERRPFX + 'unreasonable atom count: ' + numAtoms;
-            if (numBonds < 0 || numBonds > lineBonds.length)
+            if (numBonds < 0 || numBonds > lineBond.length)
                 throw ERRPFX + 'unreasonable bond count: ' + numBonds;
             let atomBits = [], bondBits = [];
-            for (let n = 0; n < lineAtoms.length; n++) {
-                let line = lineAtoms[n];
-                while (n < lineAtoms.length - 1 && line.endsWith('-')) {
+            for (let n = 0; n < lineAtom.length; n++) {
+                let line = lineAtom[n];
+                while (n < lineAtom.length - 1 && line.endsWith('-')) {
                     n++;
-                    line = line.substring(0, line.length - 1) + lineAtoms[n];
+                    line = line.substring(0, line.length - 1) + lineAtom[n];
                 }
                 let bits = this.splitWithQuotes(line);
                 if (bits.length < 6)
@@ -7778,11 +7928,11 @@ var WebMolKit;
                     throw ERRPFX + 'duplicate atom index: ' + idx;
                 atomBits[idx - 1] = bits;
             }
-            for (let n = 0; n < lineBonds.length; n++) {
-                let line = lineBonds[n];
-                while (n < lineBonds.length - 1 && line.endsWith('-')) {
+            for (let n = 0; n < lineBond.length; n++) {
+                let line = lineBond[n];
+                while (n < lineBond.length - 1 && line.endsWith('-')) {
                     n++;
-                    line = line.substring(0, line.length - 1) + lineBonds[n];
+                    line = line.substring(0, line.length - 1) + lineBond[n];
                 }
                 let bits = this.splitWithQuotes(line);
                 if (bits.length < 4)
@@ -7794,45 +7944,47 @@ var WebMolKit;
                     throw ERRPFX + 'duplicate bond index: ' + idx;
                 bondBits[idx - 1] = bits;
             }
-            let explicitValence = WebMolKit.Vec.numberArray(0, numAtoms);
-            for (let n = 1; n <= numAtoms; n++) {
-                let bits = atomBits[n - 1];
+            this.explicitValence = WebMolKit.Vec.numberArray(0, numAtoms);
+            for (let a = 1; a <= numAtoms; a++) {
+                let bits = atomBits[a - 1];
                 if (bits == null)
-                    throw ERRPFX + 'atom definition missing for #' + n;
+                    throw ERRPFX + 'atom definition missing for #' + a;
                 let type = bits[1];
                 let x = parseFloat(bits[2]), y = parseFloat(bits[3]), z = parseFloat(bits[4]);
                 let map = parseInt(bits[5]);
                 this.mol.addAtom(type, x, y);
-                this.mol.setAtomMapNum(n, map);
+                this.mol.setAtomMapNum(a, map);
                 for (let i = 6; i < bits.length; i++) {
                     let eq = bits[i].indexOf('=');
                     if (eq < 0)
                         continue;
                     let key = bits[i].substring(0, eq), val = bits[i].substring(eq + 1);
                     if (key == 'CHG')
-                        this.mol.setAtomCharge(n, parseInt(val));
+                        this.mol.setAtomCharge(a, parseInt(val));
                     else if (key == 'RAD')
-                        this.mol.setAtomUnpaired(n, parseInt(val));
+                        this.mol.setAtomUnpaired(a, parseInt(val));
                     else if (key == 'MASS')
-                        this.mol.setAtomIsotope(n, parseInt(val));
+                        this.mol.setAtomIsotope(a, parseInt(val));
                     else if (key == 'CFG') {
                         let stereo = parseInt(val);
                         if (stereo > 0 && this.keepParity) {
                         }
                     }
                     else if (key == 'VAL')
-                        explicitValence[n - 1] = parseInt(val);
+                        this.explicitValence[a - 1] = parseInt(val);
                 }
             }
-            for (let n = 1; n <= numBonds; n++) {
-                let bits = bondBits[n - 1];
+            for (let b = 1; b <= numBonds; b++) {
+                let bits = bondBits[b - 1];
                 if (bits == null)
-                    throw ERRPFX + 'bond definition missing for #' + n;
+                    throw ERRPFX + 'bond definition missing for #' + b;
                 let type = parseInt(bits[1]), bfr = parseInt(bits[2]), bto = parseInt(bits[3]);
-                let order = type >= 1 && type <= 3 ? type : 1;
+                let order = type >= 1 && type <= 3 ? type : type == 9 || type == 10 ? 0 : 1;
                 this.mol.addBond(bfr, bto, order);
                 if (type == 4) {
                 }
+                let endpts = null;
+                let attach = null;
                 for (let i = 4; i < bits.length; i++) {
                     let eq = bits[i].indexOf('=');
                     if (eq < 0)
@@ -7840,16 +7992,157 @@ var WebMolKit;
                     let key = bits[i].substring(0, eq), val = bits[i].substring(eq + 1);
                     if (key == 'CFG') {
                         let dir = parseInt(val);
-                        this.mol.setBondType(n, dir == 1 ? WebMolKit.Molecule.BONDTYPE_INCLINED :
+                        this.mol.setBondType(b, dir == 1 ? WebMolKit.Molecule.BONDTYPE_INCLINED :
                             dir == 2 ? WebMolKit.Molecule.BONDTYPE_UNKNOWN :
                                 dir == 3 ? WebMolKit.Molecule.BONDTYPE_DECLINED : WebMolKit.Molecule.BONDTYPE_NORMAL);
                     }
+                    else if (key == 'DISP') {
+                        if (val == 'COORD')
+                            this.mol.setBondOrder(b, 0);
+                    }
+                    else if (key == 'ENDPTS')
+                        endpts = this.unpackList(val);
+                    else if (key == 'ATTACH')
+                        attach = val;
+                }
+                if (attach != null && endpts != null) {
+                    if (attach == 'ALL')
+                        this.groupAttachAll.set(b, endpts);
+                    else if (attach == 'ANY')
+                        this.groupAttachAny.set(b, endpts);
                 }
             }
-            this.postFix(explicitValence);
+            this.postFix();
+            for (let n = 0; n < lineColl.length; n++) {
+                let line = lineColl[n];
+                while (n < lineColl.length - 1 && line.endsWith('-')) {
+                    n++;
+                    line = line.substring(0, line.length - 1) + lineColl[n];
+                }
+                let bits = this.splitWithQuotes(line);
+                if (bits[0].startsWith('MDLV30/STEABS')) {
+                    if (bits[1].startsWith('ATOMS='))
+                        this.groupStereoAbsolute = this.unpackList(bits[1].substring(5));
+                }
+                else if (bits[0].startsWith('MDLV30/STERAC')) {
+                    if (bits[1].startsWith('ATOMS='))
+                        this.groupStereoRacemic.push(this.unpackList(bits[1].substring(6)));
+                }
+                else if (bits[0].startsWith('MDLV30/STEREL')) {
+                    if (bits[1].startsWith('ATOMS='))
+                        this.groupStereoRelative.push(this.unpackList(bits[1].substring(6)));
+                }
+            }
+            let superatoms = new Map();
+            for (let n = 0; n < lineSgroup.length; n++) {
+                let line = lineSgroup[n];
+                while (n < lineSgroup.length - 1 && line.endsWith('-')) {
+                    n++;
+                    line = line.substring(0, line.length - 1) + lineSgroup[n];
+                }
+                let bits = this.splitWithQuotes(line);
+                let idx = parseInt(bits[0]);
+                if (bits.length > 3 && idx > 0 && bits[1] == 'SUP' && parseInt(bits[2]) == idx) {
+                    let sup = { 'atoms': [], 'name': null };
+                    for (let i = 3; i < bits.length; i++) {
+                        if (bits[i].startsWith('ATOMS='))
+                            sup.atoms = this.unpackList(bits[i].substring(6));
+                        else if (bits[i].startsWith('LABEL='))
+                            sup.name = this.withoutQuotes(bits[i].substring(6));
+                    }
+                    superatoms.set(idx, sup);
+                }
+                else if (bits.length > 3 && idx > 0 && (bits[1] == 'MIX' || bits[1] == 'FOR') && parseInt(bits[2]) == idx) {
+                    let mix = { 'index': idx, 'parent': 0, 'atoms': null, 'type': bits[1] };
+                    for (let i = 3; i < bits.length; i++) {
+                        if (bits[i].startsWith('ATOMS='))
+                            mix.atoms = this.unpackList(bits[i].substring(6));
+                        else if (bits[i].startsWith('PARENT='))
+                            mix.parent = parseInt(bits[i].substring(7));
+                    }
+                    this.groupMixtures.push(mix);
+                }
+            }
+            for (let key of WebMolKit.Vec.sorted(Array.from(superatoms.keys()))) {
+                let value = superatoms.get(key);
+                superatoms.delete(key);
+                this.applySuperAtom(value, Array.from(superatoms.values()));
+            }
+        }
+        applySuperAtom(sup, residual) {
+            if (sup.name == null || WebMolKit.Vec.isBlank(sup.atoms))
+                return;
+            let mask = WebMolKit.Vec.booleanArray(true, this.mol.numAtoms);
+            for (let a of sup.atoms)
+                mask[a - 1] = false;
+            let name = sup.name;
+            let i;
+            while ((i = name.indexOf('\\S')) >= 0)
+                name = name.substring(0, i) + '{^' + name.substring(i + 2);
+            while ((i = name.indexOf('\\s')) >= 0)
+                name = name.substring(0, i) + '{' + name.substring(i + 2);
+            while ((i = name.indexOf('\\n')) >= 0)
+                name = name.substring(0, i) + '}' + name.substring(i + 2);
+            let [mod, abvAtom] = WebMolKit.MolUtil.convertToAbbrevIndex(this.mol, mask, name);
+            if (mod == null)
+                return;
+            this.mol = mod;
+            let map = WebMolKit.Vec.maskMap(mask);
+            for (let res of residual) {
+                let subsumed = false;
+                for (let n = res.atoms.length - 1; n >= 0; n--) {
+                    let atom = map[res.atoms[n] - 1] + 1;
+                    if (atom == 0) {
+                        res.atoms = WebMolKit.Vec.remove(res.atoms, n);
+                        subsumed = true;
+                    }
+                    else
+                        res.atoms[n] = atom;
+                }
+                if (subsumed)
+                    res.atoms = WebMolKit.Vec.sorted(WebMolKit.Vec.append(res.atoms, abvAtom));
+            }
+        }
+        withoutQuotes(str) {
+            if (str.length >= 2 && str.startsWith('"') && str.endsWith('"'))
+                return str.substring(1, str.length - 1);
+            return str;
         }
         splitWithQuotes(line) {
-            return line.split('\\s+');
+            let segments = [];
+            let seg = '';
+            let depth = 0, quote = false;
+            for (let n = 0; n < line.length; n++) {
+                let ch = line.charAt(n);
+                if (ch == ' ' && depth == 0 && !quote) {
+                    if (seg.length > 0)
+                        segments.push(seg);
+                    seg = '';
+                }
+                else {
+                    seg += ch;
+                    if (ch == '"')
+                        quote = !quote;
+                    else if (ch == '(' || ch == '[')
+                        depth++;
+                    else if (ch == ')' || ch == ']')
+                        depth--;
+                }
+            }
+            if (seg.length > 0)
+                segments.push(seg);
+            return segments;
+        }
+        unpackList(str) {
+            if (!str.startsWith('(') || !str.endsWith(')'))
+                return null;
+            str = str.substring(1, str.length - 1);
+            let values = [];
+            for (let bit of str.split(' '))
+                values.push(parseInt(bit));
+            if (values[0] != values.length - 1)
+                return null;
+            return WebMolKit.Vec.remove(values, 0);
         }
     }
     WebMolKit.MDLMOLReader = MDLMOLReader;
@@ -10302,11 +10595,8 @@ var WebMolKit;
                         xy2[1] -= oy;
                     }
                 }
-                if (bo != 1 && bt == WebMolKit.Molecule.BONDTYPE_DECLINED) {
-                    let tmp = xy1;
-                    xy1 = xy2;
-                    xy2 = tmp;
-                }
+                if (bo != 1 && bt == WebMolKit.Molecule.BONDTYPE_DECLINED)
+                    [xy1, xy2] = [xy2, xy1];
                 if (bo > 1 && (bt == WebMolKit.Molecule.BONDTYPE_NORMAL || bt == WebMolKit.Molecule.BONDTYPE_UNKNOWN)) {
                     let oxy = this.orthogonalDelta(xy1[0], xy1[1], xy2[0], xy2[1], this.bondSepPix);
                     let v = -0.5 * (bo - 1);
@@ -10319,7 +10609,7 @@ var WebMolKit;
                             'type': ltype,
                             'line': new WebMolKit.Line(lx1, ly1, lx2, ly2),
                             'size': sz,
-                            'head': 0,
+                            'head': head,
                             'col': col
                         };
                         this.lines.push(b);
@@ -10713,12 +11003,8 @@ var WebMolKit;
                 let bpos = [];
                 let bpri = [];
                 let blocks = label.split('|');
-                if (side < 0) {
-                    let oldblk = blocks;
-                    blocks = [];
-                    for (let i = oldblk.length - 1; i >= 0; i--)
-                        blocks.push(oldblk[i]);
-                }
+                if (side < 0)
+                    blocks = WebMolKit.Vec.reverse(blocks);
                 let buff = '';
                 for (let i = 0; i < blocks.length; i++) {
                     let isPrimary = (side >= 0 && i == 0) || (side < 0 && i == blocks.length - 1);
@@ -10765,16 +11051,9 @@ var WebMolKit;
                 tw += chunkw[n];
             }
             let x = this.measure.angToX(ax), y = this.measure.angToY(ay);
-            if (side == 0)
-                x -= 0.5 * chunkw[0];
-            else if (side < 0) {
-                for (let n = 0; n < refchunk; n++)
-                    x -= chunkw[n];
-                x -= 0.5 * chunkw[refchunk];
-            }
-            else {
-                x -= 0.5 * chunkw[0];
-            }
+            for (let n = 0; n < refchunk; n++)
+                x -= chunkw[n];
+            x -= 0.5 * chunkw[refchunk];
             for (let n = 0; n < chunks.length; n++) {
                 let a = {
                     'anum': (n == refchunk || (primary != null && primary[n])) ? anum : 0,
@@ -11069,6 +11348,7 @@ var WebMolKit;
                 }
             }
             let lt = this.mol.bondType(idx) == WebMolKit.Molecule.BONDTYPE_UNKNOWN ? BLineType.Unknown : BLineType.Normal;
+            let head = lt == BLineType.Unknown ? 0.1 * this.scale : 0;
             let col = this.effects.colBond[idx];
             if (!col)
                 col = this.policy.data.foreground;
@@ -11079,7 +11359,7 @@ var WebMolKit;
                 'type': lt,
                 'line': new WebMolKit.Line(ax1, ay1, ax2, ay2),
                 'size': sz,
-                'head': 0,
+                'head': head,
                 'col': col
             };
             let b2 = {
@@ -11089,7 +11369,7 @@ var WebMolKit;
                 'type': lt,
                 'line': new WebMolKit.Line(bx1, by1, bx2, by2),
                 'size': sz,
-                'head': 0,
+                'head': head,
                 'col': col
             };
             this.lines.push(b1);
@@ -12925,14 +13205,16 @@ var WebMolKit;
                     got = true;
                     break;
                 }
-            this.ds.ensureColumn(AssayProvenance.COLNAME_MOLECULE, "molecule", 'Molecular structure of compound being measured');
-            this.ds.ensureColumn(AssayProvenance.COLNAME_NAME, "string", 'Name of compound');
-            this.ds.ensureColumn(AssayProvenance.COLNAME_VALUE, "real", 'Measured value');
-            this.ds.ensureColumn(AssayProvenance.COLNAME_ERROR, "real", 'Experimental error of measurement');
-            this.ds.ensureColumn(AssayProvenance.COLNAME_UNITS, "string", 'Units of measurement');
-            this.ds.ensureColumn(AssayProvenance.COLNAME_RELATION, "string", 'Relation: exact, greater or less');
-            this.ds.ensureColumn(AssayProvenance.COLNAME_SOURCEURI, "string", 'Source identifier for activity measurement');
-            if (!got) {
+            if (this.allowModify) {
+                this.ds.ensureColumn(AssayProvenance.COLNAME_MOLECULE, "molecule", 'Molecular structure of compound being measured');
+                this.ds.ensureColumn(AssayProvenance.COLNAME_NAME, "string", 'Name of compound');
+                this.ds.ensureColumn(AssayProvenance.COLNAME_VALUE, "real", 'Measured value');
+                this.ds.ensureColumn(AssayProvenance.COLNAME_ERROR, "real", 'Experimental error of measurement');
+                this.ds.ensureColumn(AssayProvenance.COLNAME_UNITS, "string", 'Units of measurement');
+                this.ds.ensureColumn(AssayProvenance.COLNAME_RELATION, "string", 'Relation: exact, greater or less');
+                this.ds.ensureColumn(AssayProvenance.COLNAME_SOURCEURI, "string", 'Source identifier for activity measurement');
+            }
+            if (!got && this.allowModify) {
                 let content = this.formatMetaData(header);
                 this.ds.appendExtension(AssayProvenance.NAME, AssayProvenance.CODE, content);
             }
@@ -13325,6 +13607,326 @@ var WebMolKit;
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
 (function (WebMolKit) {
+    class MeasurementData extends WebMolKit.Aspect {
+        constructor(ds, allowModify) {
+            super(ds, allowModify);
+            this.header = { 'units': [], 'fields': [] };
+            this.id = MeasurementData.CODE;
+            this.setup();
+        }
+        static isMeasurementData(ds) {
+            for (let n = 0; n < ds.numExtensions; n++)
+                if (ds.getExtType(n) == MeasurementData.CODE)
+                    return true;
+            return false;
+        }
+        getHeader() {
+            return this.header;
+        }
+        setHeader(header) {
+            this.header = header;
+            let content = this.formatMetaData(header);
+            for (let n = 0; n < this.ds.numExtensions; n++)
+                if (this.ds.getExtType(n) == MeasurementData.CODE) {
+                    this.ds.setExtData(n, content);
+                    return;
+                }
+            this.ds.appendExtension(MeasurementData.NAME, MeasurementData.CODE, content);
+        }
+        rename(field, newName) {
+            let oldName = this.header.fields[field].name;
+            if (oldName == newName)
+                return;
+            this.header.fields[field].name = newName;
+            this.setHeader(this.header);
+            for (let sfx of ['', '_error', '_units', '_mod']) {
+                let col = this.ds.findColByName(oldName + sfx);
+                if (col >= 0)
+                    this.ds.changeColumnName(col, newName + sfx, this.ds.colDescr(col));
+            }
+        }
+        reservedColumns(field) {
+            let fieldName = this.header.fields[field].name;
+            return [fieldName, fieldName + '_error', fieldName + '_units', fieldName + '_mod'];
+        }
+        getValue(row, fldidx) {
+            return this.getValueField(row, this.header.fields[fldidx]);
+        }
+        getValueField(row, field) {
+            let value = { 'value': Number.NaN, 'error': Number.NaN, 'units': '', 'mod': '' };
+            let colValue = this.ds.findColByName(field.name, "real");
+            let colError = this.ds.findColByName(field.name + '_error', "real");
+            let colUnits = this.ds.findColByName(field.name + '_units', "string");
+            let colMod = this.ds.findColByName(field.name + '_mod', "string");
+            if (colValue >= 0 && this.ds.notNull(row, colValue))
+                value.value = this.ds.getReal(row, colValue);
+            if (colError >= 0 && this.ds.notNull(row, colError))
+                value.error = this.ds.getReal(row, colError);
+            if (colUnits >= 0)
+                value.units = this.ds.getString(row, colUnits);
+            if (colMod >= 0)
+                value.mod = this.ds.getString(row, colMod);
+            return value;
+        }
+        setValue(row, fldidx, value) {
+            let fieldName = this.header.fields[fldidx].name;
+            let colValue = this.ds.findColByName(fieldName, "real");
+            let colError = this.ds.findColByName(fieldName + '_error', "real");
+            let colUnits = this.ds.findColByName(fieldName + '_units', "string");
+            let colMod = this.ds.findColByName(fieldName + '_mod', "string");
+            if (colValue >= 0)
+                if (isNaN(value.value))
+                    this.ds.setToNull(row, colValue);
+                else
+                    this.ds.setReal(row, colValue, value.value);
+            if (colError >= 0)
+                if (isNaN(value.error))
+                    this.ds.setToNull(row, colError);
+                else
+                    this.ds.setReal(row, colError, value.error);
+            if (colUnits >= 0)
+                this.ds.setString(row, colUnits, value.units);
+            if (colMod >= 0)
+                this.ds.setString(row, colMod, value.mod);
+        }
+        clearValue(row, fldidx) {
+            let fieldName = this.header.fields[fldidx].name;
+            let colValue = this.ds.findColByName(fieldName, "real");
+            let colError = this.ds.findColByName(fieldName + '_error', "real");
+            let colUnits = this.ds.findColByName(fieldName + '_units', "string");
+            let colMod = this.ds.findColByName(fieldName + '_mod', "string");
+            if (colValue >= 0)
+                this.ds.setToNull(row, colValue);
+            if (colError >= 0)
+                this.ds.setToNull(row, colError);
+            if (colUnits >= 0)
+                this.ds.setToNull(row, colUnits);
+            if (colMod >= 0)
+                this.ds.setToNull(row, colMod);
+        }
+        getDescr(row, fldidx) {
+            let col = this.ds.findColByName(this.header.fields[fldidx].name);
+            return col < 0 ? '' : this.ds.colDescr(col);
+        }
+        setDescr(row, fldidx, descr) {
+            let col = this.ds.findColByName(this.header.fields[fldidx].name);
+            if (col >= 0)
+                this.ds.changeColumnName(col, this.ds.colName(col), descr);
+        }
+        setup() {
+            this.parseAndCorrect();
+        }
+        parseAndCorrect() {
+            this.header = { 'units': [], 'fields': [] };
+            let got = false;
+            for (let n = 0; n < this.ds.numExtensions; n++)
+                if (this.ds.getExtType(n) == MeasurementData.CODE) {
+                    this.header = this.parseMetaData(this.ds.getExtData(n));
+                    got = true;
+                    break;
+                }
+            for (let f of this.header.fields) {
+                let descr = 'Measurement';
+                let colidx = this.ds.findColByName(f.name);
+                if (colidx >= 0)
+                    descr = this.ds.colDescr(colidx);
+                if (this.allowModify) {
+                    this.ds.ensureColumn(f.name, "real", descr);
+                    this.ds.ensureColumn(f.name + '_error', "real", 'Error');
+                    this.ds.ensureColumn(f.name + '_units', "string", 'Units');
+                    this.ds.ensureColumn(f.name + '_mod', "string", 'Modifier');
+                }
+            }
+            if (!got && this.allowModify) {
+                let content = this.formatMetaData(this.header);
+                this.ds.appendExtension(MeasurementData.NAME, MeasurementData.CODE, content);
+            }
+        }
+        parseMetaData(content) {
+            let header = { 'units': [], 'fields': [] };
+            for (let line of content.split(/\r?\n/)) {
+                let eq = line.indexOf('=');
+                if (eq < 0)
+                    continue;
+                if (line.startsWith('unit=')) {
+                    let bits = line.substring(eq + 1).split(',');
+                    if (bits.length >= 2)
+                        header.units.push({ 'name': WebMolKit.MoleculeStream.sk_unescape(bits[0]), 'uri': WebMolKit.MoleculeStream.sk_unescape(bits[1]) });
+                }
+                else if (line.startsWith('field=')) {
+                    let bits = line.substring(eq + 1).split(',');
+                    if (bits.length >= 2) {
+                        let f = { 'name': WebMolKit.MoleculeStream.sk_unescape(bits[0]), 'units': [] };
+                        for (let n = 1; n < bits.length; n++)
+                            f.units.push(WebMolKit.MoleculeStream.sk_unescape(bits[n]));
+                    }
+                }
+            }
+            return header;
+        }
+        formatMetaData(header) {
+            let lines = [];
+            for (let u of header.units) {
+                lines.push('unit=' + WebMolKit.MoleculeStream.sk_escape(u.name) + ',' + WebMolKit.MoleculeStream.sk_escape(u.uri) + '\n');
+            }
+            for (let f of header.fields) {
+                let line = 'field=' + WebMolKit.MoleculeStream.sk_escape(f.name);
+                for (let u of f.units)
+                    line += ',' + WebMolKit.MoleculeStream.sk_escape(u);
+                lines.push(line);
+            }
+            return lines.join('\n');
+        }
+        plainHeading() { return MeasurementData.NAME; }
+        isColumnReserved(colName) {
+            return this.areColumnsReserved([colName])[0];
+        }
+        areColumnsReserved(colNames) {
+            let names = new Set();
+            for (let f of this.header.fields) {
+                names.add(f.name);
+                names.add(f.name + '_error');
+                names.add(f.name + '_units');
+                names.add(f.name + '_mod');
+            }
+            let resv = [];
+            for (let col of colNames)
+                resv.push(names.has(col));
+            return resv;
+        }
+    }
+    MeasurementData.CODE = 'org.mmi.aspect.MeasurementData';
+    MeasurementData.NAME = 'Measurement Data';
+    WebMolKit.MeasurementData = MeasurementData;
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
+    class BinaryDataField {
+    }
+    WebMolKit.BinaryDataField = BinaryDataField;
+    class BinaryData extends WebMolKit.Aspect {
+        constructor(ds, allowModify) {
+            super(ds, allowModify);
+            this.fields = [];
+            this.id = BinaryData.CODE;
+            this.setup();
+        }
+        static isBinaryData(ds) {
+            for (let n = 0; n < ds.numExtensions; n++)
+                if (ds.getExtType(n) == BinaryData.CODE)
+                    return true;
+            return false;
+        }
+        getFields() {
+            return WebMolKit.deepClone(this.fields);
+        }
+        setFields(fields) {
+            this.fields = WebMolKit.deepClone(fields);
+            let content = this.formatMetaData(fields);
+            for (let n = 0; n < this.ds.numExtensions; n++)
+                if (this.ds.getExtType(n) == WebMolKit.MeasurementData.CODE) {
+                    this.ds.setExtData(n, content);
+                    return;
+                }
+            this.ds.appendExtension(WebMolKit.MeasurementData.NAME, WebMolKit.MeasurementData.CODE, content);
+        }
+        getValue(row, field) {
+            let value = this.getDestValue(row, field);
+            if (value != null)
+                return;
+            return this.getSourceValue(row, field);
+        }
+        getSourceValue(row, field) {
+            let col = this.ds.findColByName(field.colNameSource);
+            if (col < 0 || this.ds.isNull(row, col))
+                return null;
+            let ct = this.ds.colType(col);
+            let value = 0;
+            if (ct == "boolean")
+                return this.ds.getBoolean(row, col);
+            else if (ct == "integer")
+                value = this.ds.getInteger(row, col);
+            else if (ct == "real")
+                value = this.ds.getReal(row, col);
+            else
+                return null;
+            if (field.thresholdRelation == '>')
+                return value > field.thresholdValue;
+            if (field.thresholdRelation == '<')
+                return value < field.thresholdValue;
+            if (field.thresholdRelation == '>=')
+                return value >= field.thresholdValue;
+            if (field.thresholdRelation == '<=')
+                return value <= field.thresholdValue;
+            return null;
+        }
+        getDestValue(row, field) {
+            return this.ds.getBoolean(row, field.colNameDest);
+        }
+        setup() {
+            this.parseAndCorrect();
+        }
+        parseAndCorrect() {
+            let got = false;
+            for (let n = 0; n < this.ds.numExtensions; n++)
+                if (this.ds.getExtType(n) == WebMolKit.MeasurementData.CODE) {
+                    this.fields = this.parseMetaData(this.ds.getExtData(n));
+                    got = true;
+                    break;
+                }
+            if (!got && this.allowModify) {
+                let content = this.formatMetaData(this.fields);
+                this.ds.appendExtension(WebMolKit.MeasurementData.NAME, WebMolKit.MeasurementData.CODE, content);
+            }
+        }
+        parseMetaData(content) {
+            let fields = [];
+            let f = null;
+            for (let line of content.split(/\r?\n/)) {
+                if (line == 'field:') {
+                    if (f != null)
+                        fields.push(f);
+                    f = { 'colNameSource': '', 'colNameDest': '', 'thresholdValue': 0.5, 'thresholdRelation': '>=' };
+                    continue;
+                }
+                if (f == null)
+                    continue;
+                let eq = line.indexOf('=');
+                if (eq < 0)
+                    continue;
+                if (line.startsWith('colNameSource='))
+                    f.colNameSource = WebMolKit.MoleculeStream.sk_unescape(line.substring(eq + 1));
+                else if (line.startsWith('colNameDest='))
+                    f.colNameDest = WebMolKit.MoleculeStream.sk_unescape(line.substring(eq + 1));
+                else if (line.startsWith('thresholdValue='))
+                    f.thresholdValue = parseFloat(line.substring(eq + 1));
+                else if (line.startsWith('thresholdRelation='))
+                    f.thresholdRelation = WebMolKit.MoleculeStream.sk_unescape(line.substring(eq + 1));
+            }
+            if (f != null)
+                fields.push(f);
+            return fields;
+        }
+        formatMetaData(fields) {
+            let lines = [];
+            for (let f of fields) {
+                lines.push('field:');
+                lines.push('colNameSource=' + WebMolKit.MoleculeStream.sk_escape(f.colNameSource));
+                lines.push('colNameDest=' + WebMolKit.MoleculeStream.sk_escape(f.colNameDest));
+                lines.push('thresholdValue=' + f.thresholdValue);
+                lines.push('thresholdRelation=' + WebMolKit.MoleculeStream.sk_escape(f.thresholdRelation));
+            }
+            return lines.join('\n');
+        }
+        plainHeading() { return BinaryData.NAME; }
+        isColumnReserved(colName) { return false; }
+    }
+    BinaryData.CODE = 'org.mmi.aspect.BinaryData';
+    BinaryData.NAME = 'Binary Data';
+    WebMolKit.BinaryData = BinaryData;
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
     let SUPPORTED_ASPECTS = {};
     class AspectList {
         constructor(ds) {
@@ -13335,6 +13937,8 @@ var WebMolKit;
                 SUPPORTED_ASPECTS[WebMolKit.AssayProvenance.CODE] = WebMolKit.AssayProvenance.NAME;
                 SUPPORTED_ASPECTS[WebMolKit.BayesianSource.CODE] = WebMolKit.BayesianSource.NAME;
                 SUPPORTED_ASPECTS[WebMolKit.BayesianPrediction.CODE] = WebMolKit.BayesianPrediction.NAME;
+                SUPPORTED_ASPECTS[WebMolKit.MeasurementData.CODE] = WebMolKit.MeasurementData.NAME;
+                SUPPORTED_ASPECTS[WebMolKit.BinaryData.CODE] = WebMolKit.BinaryData.NAME;
             }
         }
         list() {
@@ -13358,6 +13962,12 @@ var WebMolKit;
                 return new WebMolKit.AssayProvenance(this.ds);
             if (code == WebMolKit.BayesianSource.CODE)
                 return new WebMolKit.BayesianSource(this.ds);
+            if (code == WebMolKit.BayesianPrediction.CODE)
+                return new WebMolKit.BayesianPrediction(this.ds);
+            if (code == WebMolKit.MeasurementData.CODE)
+                return new WebMolKit.MeasurementData(this.ds);
+            if (code == WebMolKit.BinaryData.CODE)
+                return new WebMolKit.BinaryData(this.ds);
             return null;
         }
         enumerate() {
@@ -14524,6 +15134,8 @@ var WebMolKit;
             this.rocAUC = Number.NaN;
             this.trainingSize = 0;
             this.trainingActives = 0;
+            this.atomicSlopeA = Number.NaN;
+            this.atomicInterceptB = Number.NaN;
             this.truthTP = 0;
             this.truthFP = 0;
             this.truthTN = 0;
@@ -14652,6 +15264,11 @@ var WebMolKit;
                     if (mask[n])
                         atomic[n] += c * invSz;
             }
+            if (!isNaN(this.atomicSlopeA)) {
+                for (let n = 0; n < na; n++)
+                    atomic[n] = (this.atomicSlopeA * atomic[n]) + this.atomicInterceptB;
+                return atomic;
+            }
             let pred = 0;
             for (let h of predHashes) {
                 let c = this.contribs[h];
@@ -14737,6 +15354,10 @@ var WebMolKit;
                 lines.push('truth:F1=' + this.statF1);
                 lines.push('truth:kappa=' + this.statKappa);
                 lines.push('truth:MCC=' + this.statMCC);
+            }
+            if (!isNaN(this.atomicSlopeA) && !isNaN(this.atomicInterceptB)) {
+                lines.push('atomic:slope=' + this.atomicSlopeA);
+                lines.push('atomic:intercept=' + this.atomicInterceptB);
             }
             if (this.noteTitle)
                 lines.push('note:title=' + this.noteTitle);
@@ -14830,6 +15451,10 @@ var WebMolKit;
                     model.statKappa = parseFloat(line.substring(12));
                 else if (line.startsWith('truth:MCC='))
                     model.statMCC = parseFloat(line.substring(10));
+                else if (line.startsWith('atomic:slope='))
+                    model.atomicSlopeA = parseFloat(line.substring(13));
+                else if (line.startsWith('atomic:intercept='))
+                    model.atomicInterceptB = parseFloat(line.substring(17));
                 else if (line.startsWith('note:title='))
                     model.noteTitle = line.substring(11);
                 else if (line.startsWith('note:origin='))
@@ -15602,7 +16227,8 @@ var WebMolKit;
                 hit = n;
                 break;
             }
-            let abv = { 'name': name, 'frag': frag };
+            let [html, search] = this.formatAbbrevLabel(name);
+            let abv = { 'name': name, 'frag': frag, 'nameHTML': html, 'nameSearch': search };
             if (hit < 0) {
                 if (promote)
                     this.abbrevs.unshift(abv);
@@ -15617,6 +16243,33 @@ var WebMolKit;
                 else
                     this.abbrevs[hit] = abv;
             }
+        }
+        formatAbbrevLabel(name) {
+            let html = '', search = '';
+            let append = (bit, tag) => {
+                if (tag)
+                    html += '<' + tag + '>';
+                html += WebMolKit.escapeHTML(bit);
+                search += bit;
+                if (tag)
+                    html += '</' + tag + '>';
+            };
+            for (let bit of name.split('|')) {
+                while (true) {
+                    let match = bit.match(/^(.*?)\{(.*?)\}(.*)$/);
+                    if (!match)
+                        break;
+                    let pre = match[1], mid = match[2], post = match[3];
+                    append(pre, null);
+                    if (mid.startsWith('^'))
+                        append(mid.substring(1), 'sup');
+                    else
+                        append(mid, 'sub');
+                    bit = post;
+                }
+                append(bit, null);
+            }
+            return [html, search.toLowerCase()];
         }
     }
     AbbrevContainer.main = null;
@@ -16180,6 +16833,7 @@ var WebMolKit;
             this.maxPortionWidth = 80;
             this.maximumWidth = 0;
             this.maximumHeight = 0;
+            this.topMargin = 50;
             this.title = 'Dialog';
             this.callbackClose = null;
             this.callbackShown = null;
@@ -16193,17 +16847,13 @@ var WebMolKit;
         }
         open() {
             let body = $(document.documentElement);
-            let bg = $('<div></div>').appendTo(body);
-            bg.css('width', '100%');
-            bg.css('height', Math.max(document.body.clientHeight, document.body.scrollHeight) + 'px');
-            bg.css('background-color', 'black');
-            bg.css('opacity', 0.8);
-            bg.css('position', 'absolute');
-            bg.css('left', '0');
-            bg.css('top', '0');
-            bg.css('z-index', 9999);
+            let bg = this.obscureBackground = $('<div/>').appendTo(body);
+            bg.css({ 'width': '100%', 'height': `max(${document.documentElement.clientHeight}px, 100vh)` });
+            bg.css({ 'background-color': 'black', 'opacity': 0.8 });
+            bg.css({ 'position': 'absolute', 'left': 0, 'top': 0, 'z-index': 9999 });
+            bg.click(() => this.close());
             this.obscureBackground = bg;
-            let pb = $('<div class="wmk-dialog"></div>').appendTo(body);
+            let pb = $('<div class="wmk-dialog"/>').appendTo(body);
             pb.css('min-width', this.minPortionWidth + '%');
             if (this.maximumWidth > 0)
                 pb.css('max-width', this.maximumWidth + 'px');
@@ -16216,11 +16866,11 @@ var WebMolKit;
             pb.css('border', '1px solid black');
             pb.css('position', 'absolute');
             pb.css('left', (50 - 0.5 * this.minPortionWidth) + '%');
-            pb.css('top', (window.scrollY + 50) + 'px');
+            pb.css('top', (window.scrollY + this.topMargin) + 'px');
             pb.css('min-height', '20%');
             pb.css('z-index', 10000);
             this.panelBoundary = pb;
-            let tdiv = $('<div></div>').appendTo(pb);
+            let tdiv = $('<div/>').appendTo(pb);
             tdiv.css('width', '100%');
             tdiv.css('background-color', '#F0F0F0');
             tdiv.css('background-image', 'linear-gradient(to right bottom, #FFFFFF, #E0E0E0)');
@@ -16229,18 +16879,16 @@ var WebMolKit;
             tdiv.css('margin', 0);
             tdiv.css('padding', 0);
             this.titleDiv = tdiv;
-            let bdiv = $('<div></div>').appendTo(pb);
+            let bdiv = $('<div/>').appendTo(pb);
             bdiv.css('width', '100%');
-            this.bodyDiv = $('<div style="padding: 0.5em;"></div>').appendTo(bdiv);
-            let ttlTable = $('<table></table>').appendTo(tdiv), tr = $('<tr></tr>').appendTo(ttlTable);
+            this.bodyDiv = $('<div style="padding: 0.5em;"/>').appendTo(bdiv);
+            let ttlTable = $('<table/>').appendTo(tdiv), tr = $('<tr/>').appendTo(ttlTable);
             ttlTable.attr('width', '100%');
-            let tdTitle = $('<td valign="center"></td>').appendTo(tr);
+            let tdTitle = $('<td valign="center"/>').appendTo(tr);
             tdTitle.css('padding', '0.5em');
-            let ttl = $('<font></font>').appendTo(tdTitle);
-            ttl.css('font-size', '1.5em');
-            ttl.css('font-weight', '600');
+            let ttl = $('<font/>').appendTo(tdTitle).css({ 'font-size': '1.5em', 'font-weight': '600' });
             ttl.text(this.title);
-            let tdButtons = $('<td align="right" valign="center"></td>').appendTo(tr);
+            let tdButtons = $('<td align="right" valign="center"/>').appendTo(tr);
             tdButtons.css('padding', '0.5em');
             this.btnClose = $('<button class="wmk-button wmk-button-default">Close</button>').appendTo(tdButtons);
             this.btnClose.click(() => this.close());
@@ -17371,6 +18019,7 @@ var WebMolKit;
         }
         getString() { return null; }
         setString(str) { }
+        setImage(blob) { }
         canSetHTML() { return false; }
         setHTML(html) { }
         canAlwaysGet() { return false; }
@@ -17419,9 +18068,6 @@ var WebMolKit;
             return this.lastContent;
         }
         setString(str) {
-            this.performCopy(str);
-        }
-        performCopy(content) {
             if (this.fakeTextArea == null) {
                 this.fakeTextArea = document.createElement('textarea');
                 this.fakeTextArea.style.fontSize = '12pt';
@@ -17434,11 +18080,34 @@ var WebMolKit;
                 this.fakeTextArea.setAttribute('readonly', '');
                 document.body.appendChild(this.fakeTextArea);
             }
-            this.fakeTextArea.value = content;
+            this.fakeTextArea.value = str;
             this.fakeTextArea.select();
             this.busy = true;
             document.execCommand('copy');
             this.busy = false;
+        }
+        setImage(blob) {
+            this.busy = true;
+            let rdr = new FileReader();
+            rdr.onload = (event) => {
+                let dataURL = event.target.result.toString();
+                if (!dataURL)
+                    return;
+                let img = $('<img/>').attr('src', dataURL);
+                img.on('load', () => {
+                    let r = document.createRange();
+                    r.setStartBefore(img[0]);
+                    r.setEndAfter(img[0]);
+                    r.selectNode(img[0]);
+                    let sel = window.getSelection();
+                    sel.addRange(r);
+                    document.execCommand('copy');
+                    img.remove();
+                    this.busy = false;
+                });
+                img.appendTo(document.body);
+            };
+            rdr.readAsDataURL(blob);
         }
     }
     WebMolKit.ClipboardProxyWeb = ClipboardProxyWeb;
@@ -18227,25 +18896,28 @@ var WebMolKit;
         ActivityType[ActivityType["Flip"] = 34] = "Flip";
         ActivityType[ActivityType["Scale"] = 35] = "Scale";
         ActivityType[ActivityType["Rotate"] = 36] = "Rotate";
-        ActivityType[ActivityType["Move"] = 37] = "Move";
-        ActivityType[ActivityType["Ring"] = 38] = "Ring";
-        ActivityType[ActivityType["TemplateFusion"] = 39] = "TemplateFusion";
-        ActivityType[ActivityType["AbbrevTempl"] = 40] = "AbbrevTempl";
-        ActivityType[ActivityType["AbbrevGroup"] = 41] = "AbbrevGroup";
-        ActivityType[ActivityType["AbbrevFormula"] = 42] = "AbbrevFormula";
-        ActivityType[ActivityType["AbbrevClear"] = 43] = "AbbrevClear";
-        ActivityType[ActivityType["AbbrevExpand"] = 44] = "AbbrevExpand";
-        ActivityType[ActivityType["BondArtifactPath"] = 45] = "BondArtifactPath";
-        ActivityType[ActivityType["BondArtifactRing"] = 46] = "BondArtifactRing";
-        ActivityType[ActivityType["BondArtifactArene"] = 47] = "BondArtifactArene";
-        ActivityType[ActivityType["BondArtifactClear"] = 48] = "BondArtifactClear";
+        ActivityType[ActivityType["BondDist"] = 37] = "BondDist";
+        ActivityType[ActivityType["AlignAngle"] = 38] = "AlignAngle";
+        ActivityType[ActivityType["AdjustTorsion"] = 39] = "AdjustTorsion";
+        ActivityType[ActivityType["Move"] = 40] = "Move";
+        ActivityType[ActivityType["Ring"] = 41] = "Ring";
+        ActivityType[ActivityType["TemplateFusion"] = 42] = "TemplateFusion";
+        ActivityType[ActivityType["AbbrevTempl"] = 43] = "AbbrevTempl";
+        ActivityType[ActivityType["AbbrevGroup"] = 44] = "AbbrevGroup";
+        ActivityType[ActivityType["AbbrevFormula"] = 45] = "AbbrevFormula";
+        ActivityType[ActivityType["AbbrevClear"] = 46] = "AbbrevClear";
+        ActivityType[ActivityType["AbbrevExpand"] = 47] = "AbbrevExpand";
+        ActivityType[ActivityType["BondArtifactPath"] = 48] = "BondArtifactPath";
+        ActivityType[ActivityType["BondArtifactRing"] = 49] = "BondArtifactRing";
+        ActivityType[ActivityType["BondArtifactArene"] = 50] = "BondArtifactArene";
+        ActivityType[ActivityType["BondArtifactClear"] = 51] = "BondArtifactClear";
     })(ActivityType = WebMolKit.ActivityType || (WebMolKit.ActivityType = {}));
     class MoleculeActivity {
-        constructor(owner, activity, param, override) {
-            this.owner = owner;
+        constructor(input, activity, param, override, owner) {
+            this.input = input;
             this.activity = activity;
             this.param = param;
-            this.input = owner.getState();
+            this.owner = owner;
             this.output =
                 {
                     'mol': null,
@@ -18285,188 +18957,118 @@ var WebMolKit;
                 WebMolKit.Vec.addTo(this.subjectIndex, 1);
             }
         }
+        setOwner(owner) {
+            this.owner = owner;
+        }
         evaluate() {
             return true;
         }
         execute() {
             let param = this.param;
-            if (this.activity == ActivityType.Delete) {
+            if (this.activity == ActivityType.Delete)
                 this.execDelete();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Clear) {
+            else if (this.activity == ActivityType.Clear)
                 this.execClear();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Copy) {
+            else if (this.activity == ActivityType.Copy)
                 this.execCopy(false);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Cut) {
+            else if (this.activity == ActivityType.Cut)
                 this.execCopy(true);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectAll) {
+            else if (this.activity == ActivityType.SelectAll)
                 this.execSelectAll(true);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectNone) {
+            else if (this.activity == ActivityType.SelectNone)
                 this.execSelectAll(false);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectPrevComp) {
+            else if (this.activity == ActivityType.SelectPrevComp)
                 this.execSelectComp(-1);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectNextComp) {
+            else if (this.activity == ActivityType.SelectNextComp)
                 this.execSelectComp(1);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectSide) {
+            else if (this.activity == ActivityType.SelectSide)
                 this.execSelectSide();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectGrow) {
+            else if (this.activity == ActivityType.SelectGrow)
                 this.execSelectGrow();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectShrink) {
+            else if (this.activity == ActivityType.SelectShrink)
                 this.execSelectShrink();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectChain) {
+            else if (this.activity == ActivityType.SelectChain)
                 this.execSelectChain();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectSmRing) {
+            else if (this.activity == ActivityType.SelectSmRing)
                 this.execSelectSmRing();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectRingBlk) {
+            else if (this.activity == ActivityType.SelectRingBlk)
                 this.execSelectRingBlk();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectCurElement) {
+            else if (this.activity == ActivityType.SelectCurElement)
                 this.execSelectCurElement();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectToggle) {
+            else if (this.activity == ActivityType.SelectToggle)
                 this.execSelectToggle();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.SelectUnCurrent) {
+            else if (this.activity == ActivityType.SelectUnCurrent)
                 this.execSelectUnCurrent();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Element) {
+            else if (this.activity == ActivityType.Element)
                 this.execElement(param.element, param.positionX, param.positionY, param.keepAbbrev);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Charge) {
+            else if (this.activity == ActivityType.Charge)
                 this.execCharge(param.delta);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Connect) {
+            else if (this.activity == ActivityType.Connect)
                 this.execConnect(1, WebMolKit.Molecule.BONDTYPE_NORMAL);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Disconnect) {
+            else if (this.activity == ActivityType.Disconnect)
                 this.execDisconnect();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.BondOrder) {
+            else if (this.activity == ActivityType.BondOrder)
                 this.execBond(param.order, WebMolKit.Molecule.BONDTYPE_NORMAL);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.BondType) {
+            else if (this.activity == ActivityType.BondType)
                 this.execBond(1, param.type);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.BondGeom) {
+            else if (this.activity == ActivityType.BondGeom)
                 this.execBondGeom(param.geom);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.BondAtom) {
+            else if (this.activity == ActivityType.BondAtom)
                 this.execBondAtom(param.order, param.type, param.element, param.x1, param.y1, param.x2, param.y2);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.BondSwitch) {
+            else if (this.activity == ActivityType.BondSwitch)
                 this.execBondSwitch();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.BondAddTwo) {
+            else if (this.activity == ActivityType.BondAddTwo)
                 this.execBondAddTwo();
-                this.finish();
-            }
             else if (this.activity == ActivityType.BondInsert) {
             }
-            else if (this.activity == ActivityType.Join) {
+            else if (this.activity == ActivityType.Join)
                 this.execJoin();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Nudge) {
+            else if (this.activity == ActivityType.Nudge)
                 this.execNudge(param.dir, 0.1);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.NudgeLots) {
+            else if (this.activity == ActivityType.NudgeLots)
                 this.execNudge(param.dir, 1);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.NudgeFar) {
+            else if (this.activity == ActivityType.NudgeFar)
                 this.execNudgeFar(param.dir);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Flip) {
+            else if (this.activity == ActivityType.Flip)
                 this.execFlip(param.axis);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Scale) {
+            else if (this.activity == ActivityType.Scale)
                 this.execScale(param.mag);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Rotate) {
+            else if (this.activity == ActivityType.Rotate)
                 this.execRotate(param.theta, param.centreX, param.centreY);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Move) {
+            else if (this.activity == ActivityType.BondDist)
+                this.execBondDist(param.dist);
+            else if (this.activity == ActivityType.AlignAngle)
+                this.execAlignAngle(param.angle);
+            else if (this.activity == ActivityType.AdjustTorsion)
+                this.execAdjustTorsion(param.angle);
+            else if (this.activity == ActivityType.Move)
                 this.execMove(param.refAtom, param.deltaX, param.deltaY);
-                this.finish();
-            }
-            else if (this.activity == ActivityType.Ring) {
+            else if (this.activity == ActivityType.Ring)
                 this.execRing(param.ringX, param.ringY, param.aromatic);
-                this.finish();
-            }
             else if (this.activity == ActivityType.TemplateFusion) {
                 this.execTemplateFusion(WebMolKit.Molecule.fromString(param.fragNative));
-                this.owner.setPermutations(this.output.permutations);
+                if (this.owner)
+                    this.owner.setPermutations(this.output.permutations);
+                return;
             }
-            else if (this.activity == ActivityType.AbbrevTempl) {
+            else if (this.activity == ActivityType.AbbrevTempl)
                 this.execAbbrevTempl();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.AbbrevGroup) {
+            else if (this.activity == ActivityType.AbbrevGroup)
                 this.execAbbrevGroup();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.AbbrevFormula) {
+            else if (this.activity == ActivityType.AbbrevFormula)
                 this.execAbbrevFormula();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.AbbrevClear) {
+            else if (this.activity == ActivityType.AbbrevClear)
                 this.execAbbrevClear();
-                this.finish();
-            }
-            else if (this.activity == ActivityType.AbbrevExpand) {
+            else if (this.activity == ActivityType.AbbrevExpand)
                 this.execAbbrevExpand();
-                this.finish();
-            }
             else if (this.activity == ActivityType.BondArtifactPath || this.activity == ActivityType.BondArtifactRing ||
-                this.activity == ActivityType.BondArtifactArene || this.activity == ActivityType.BondArtifactClear) {
+                this.activity == ActivityType.BondArtifactArene || this.activity == ActivityType.BondArtifactClear)
                 this.execBondArtifact(this.activity);
-                this.finish();
-            }
+            this.finish();
         }
         finish() {
+            if (!this.owner)
+                return;
             if (this.output.mol != null || this.output.currentAtom >= 0 || this.output.currentBond >= 0 || this.output.selectedMask != null) {
                 this.owner.setState(this.output, true);
                 if (this.errmsg != null)
@@ -19093,6 +19695,103 @@ var WebMolKit;
             this.output.mol = mol.clone();
             WebMolKit.CoordUtil.rotateAtoms(this.output.mol, mask, cx, cy, theta);
         }
+        execBondDist(dist) {
+            let bond = this.input.currentBond;
+            if (bond == 0) {
+                this.errmsg = 'There must be a current bond.';
+                return;
+            }
+            let mol = this.input.mol.clone();
+            if (mol.bondInRing(bond)) {
+                let atom1 = mol.bondFrom(bond), atom2 = mol.bondTo(bond);
+                let dx = mol.atomX(atom2) - mol.atomX(atom1), dy = mol.atomY(atom2) - mol.atomY(atom1), curDist = WebMolKit.norm_xy(dx, dy), inv = 1.0 / curDist;
+                let sel1 = this.isSelected(atom1), sel2 = this.isSelected(atom2);
+                let ox = dx * (dist - curDist) * inv, oy = dy * (dist - curDist) * inv;
+                if (sel1 && !sel2) {
+                    mol.setAtomPos(atom1, mol.atomX(atom1) - ox, mol.atomY(atom1) - oy);
+                }
+                else if (sel2 && !sel1) {
+                    mol.setAtomPos(atom2, mol.atomX(atom2) + ox, mol.atomY(atom2) + oy);
+                }
+                else {
+                    mol.setAtomPos(atom1, mol.atomX(atom1) - 0.5 * ox, mol.atomY(atom1) - 0.5 * oy);
+                    mol.setAtomPos(atom2, mol.atomX(atom2) + 0.5 * ox, mol.atomY(atom2) + 0.5 * oy);
+                }
+            }
+            else {
+                let [atom1, atom2, side] = this.heavySide(bond);
+                let dx = mol.atomX(atom2) - mol.atomX(atom1), dy = mol.atomY(atom2) - mol.atomY(atom1);
+                let curDist = WebMolKit.norm_xy(dx, dy), inv = 1.0 / curDist;
+                let ox = dx * (dist - curDist) * inv, oy = dy * (dist - curDist) * inv;
+                for (let a of side)
+                    mol.setAtomPos(a, mol.atomX(a) - ox, mol.atomY(a) - oy);
+            }
+            this.output.mol = mol;
+        }
+        execAlignAngle(angle) {
+            let bond = this.input.currentBond;
+            if (bond == 0) {
+                this.errmsg = 'There must be a current bond.';
+                return;
+            }
+            let mol = this.input.mol.clone();
+            if (mol.bondInRing(bond)) {
+                this.errmsg = 'Cannot align a ring-bond.';
+                return;
+            }
+            let [atom1, atom2, side] = this.heavySide(bond);
+            let cx = mol.atomX(atom2), cy = mol.atomY(atom2);
+            let delta = angle - Math.atan2(mol.atomY(atom1) - cy, mol.atomX(atom1) - cx);
+            let cosTheta = Math.cos(delta), sinTheta = Math.sin(delta);
+            for (let a of side) {
+                let x = mol.atomX(a) - cx, y = mol.atomY(a) - cy;
+                mol.setAtomPos(a, cx + x * cosTheta - y * sinTheta, cy + x * sinTheta + y * cosTheta);
+            }
+            this.output.mol = mol;
+        }
+        execAdjustTorsion(angle) {
+            if (this.input.currentAtom == 0 || WebMolKit.Vec.maskCount(this.input.selectedMask) != 3) {
+                this.errmsg = 'Must be 3 selected atoms and a current atom.';
+                return;
+            }
+            let mol = this.input.mol.clone();
+            let a1 = this.input.currentAtom;
+            let atoms = [];
+            for (let n = 1; n <= mol.numAtoms; n++)
+                if (n != a1 && this.input.selectedMask[n - 1])
+                    atoms.push(n);
+            let a2 = mol.findBond(a1, atoms[0]) > 0 ? atoms.shift() :
+                mol.findBond(a1, atoms[1]) > 0 ? atoms.pop() : 0;
+            if (a2 == 0 || mol.findBond(a2, atoms[0]) == 0) {
+                this.errmsg = 'Selected atoms must be consecutive.';
+                return;
+            }
+            let a3 = atoms[0];
+            let cx = mol.atomX(a2), cy = mol.atomY(a2);
+            let theta1 = Math.atan2(mol.atomY(a1) - cy, mol.atomX(a1) - cx);
+            let theta3 = Math.atan2(mol.atomY(a3) - cy, mol.atomX(a3) - cx);
+            let delta = angle - WebMolKit.angleDiff(theta3, theta1);
+            let group1 = [], group3 = [];
+            if (mol.atomRingBlock(a1) == 0 || mol.atomRingBlock(a1) != mol.atomRingBlock(a3)) {
+                let g = WebMolKit.Graph.fromMolecule(mol);
+                g.removeEdge(a2 - 1, a1 - 1);
+                g.removeEdge(a2 - 1, a3 - 1);
+                let cc = g.calculateComponents();
+                for (let n = 0; n < g.numNodes; n++) {
+                    if (cc[n] == cc[a1 - 1])
+                        group1.push(n + 1);
+                    else if (cc[n] == cc[a3 - 1])
+                        group3.push(n + 1);
+                }
+            }
+            if (mol.atomRingBlock(a1) > 0 && mol.atomRingBlock(a1) == mol.atomRingBlock(a2))
+                group1 = [a1];
+            if (mol.atomRingBlock(a3) > 0 && mol.atomRingBlock(a3) == mol.atomRingBlock(a2))
+                group3 = [a3];
+            WebMolKit.CoordUtil.rotateAtoms(mol, WebMolKit.Vec.idxMask(WebMolKit.Vec.add(group1, -1), mol.numAtoms), cx, cy, -0.5 * delta);
+            WebMolKit.CoordUtil.rotateAtoms(mol, WebMolKit.Vec.idxMask(WebMolKit.Vec.add(group3, -1), mol.numAtoms), cx, cy, 0.5 * delta);
+            this.output.mol = mol;
+        }
         execMove(refAtom, deltaX, deltaY) {
             let subj = this.subjectIndex;
             if (WebMolKit.Vec.arrayLength(subj) == 0)
@@ -19493,6 +20192,30 @@ var WebMolKit;
             }
             return true;
         }
+        heavySide(bond) {
+            let { mol } = this.input;
+            let atom1 = mol.bondFrom(bond), atom2 = mol.bondTo(bond);
+            let g = WebMolKit.Graph.fromMolecule(mol);
+            g.removeEdge(atom1 - 1, atom2 - 1);
+            let side1 = [], side2 = [];
+            for (let grp of g.calculateComponentGroups()) {
+                if (grp.includes(atom1 - 1))
+                    side1 = WebMolKit.Vec.add(grp, 1);
+                if (grp.includes(atom2 - 1))
+                    side2 = WebMolKit.Vec.add(grp, 1);
+            }
+            let weight1 = side1.length * (mol.atomRingBlock(atom1) > 0 ? 2 : 1);
+            let weight2 = side2.length * (mol.atomRingBlock(atom2) > 0 ? 2 : 1);
+            let sel1 = this.isSelected(atom1), sel2 = this.isSelected(atom2);
+            if (sel1 && !sel2) { }
+            else if (sel2 && !sel1 || weight2 < weight1)
+                return [atom2, atom1, side2];
+            return [atom1, atom2, side1];
+        }
+        isSelected(atom) {
+            let mask = this.input.selectedMask;
+            return mask ? mask[atom - 1] : false;
+        }
     }
     WebMolKit.MoleculeActivity = MoleculeActivity;
 })(WebMolKit || (WebMolKit = {}));
@@ -19597,7 +20320,7 @@ var WebMolKit;
         { 'id': 'delete', 'imageFN': 'MainDelete', 'helpText': 'Delete selected atoms and bonds.', 'mnemonic': 'D' },
         { 'id': 'cut', 'imageFN': 'MainCut', 'helpText': 'Copy selection to clipboard, and remove.', 'mnemonic': 'Ctrl+X' },
         { 'id': 'copy', 'imageFN': 'MainCopy', 'helpText': 'Copy selection to clipboard.', 'mnemonic': 'Ctrl+C' },
-        { 'id': 'paste', 'imageFN': 'MainPaste', 'helpText': 'Paste clipboard contents.', 'mnemonic': 'Ctrl+V' },
+        { 'id': 'paste', 'imageFN': 'MainPaste', 'helpText': 'Paste clipboard contents.' },
         { 'id': 'atom', 'imageFN': 'MainAtom', 'helpText': 'Open the Atom submenu.', 'isSubMenu': true, 'mnemonic': 'A' },
         { 'id': 'bond', 'imageFN': 'MainBond', 'helpText': 'Open the Bond submenu.', 'isSubMenu': true, 'mnemonic': 'B' },
         { 'id': 'select', 'imageFN': 'MainSelect', 'helpText': 'Open the Selection submenu.', 'isSubMenu': true, 'mnemonic': 'S' },
@@ -20013,7 +20736,7 @@ var WebMolKit;
             else
                 alert('Unhandled command: "' + id + '"');
             if (actv > 0) {
-                new WebMolKit.MoleculeActivity(this.owner, actv, param).execute();
+                new WebMolKit.MoleculeActivity(this.owner.getState(), actv, param, {}, this.owner).execute();
             }
         }
         claimKey(event) {
@@ -20436,7 +21159,7 @@ var WebMolKit;
             else {
                 let idx = parseInt(id);
                 let param = { 'fragNative': this.templates.molecules[idx] };
-                new WebMolKit.MoleculeActivity(this.owner, WebMolKit.ActivityType.TemplateFusion, param).execute();
+                new WebMolKit.MoleculeActivity(this.owner.getState(), WebMolKit.ActivityType.TemplateFusion, param, {}, this.owner).execute();
             }
         }
         loadResourceData(onComplete) {
@@ -20781,10 +21504,11 @@ var WebMolKit;
             super();
             this.options = options;
             this.isVertical = isVertical;
+            this.padding = 6;
+            this.htmlLabels = false;
             this.selidx = 0;
             this.buttonDiv = [];
             this.auxCell = [];
-            this.padding = 6;
             this.callbackSelect = null;
             if (options.length == 0)
                 throw 'molsync.ui.OptionList: must provide a list of option labels.';
@@ -20850,6 +21574,8 @@ var WebMolKit;
                     div.text('\u00A0\u2716\u00A0');
                 else if (txt.length == 0)
                     div.text('\u00A0\u00A0\u00A0');
+                else if (this.htmlLabels)
+                    div.html(txt);
                 else
                     div.text(txt);
                 div.off('mouseover');
@@ -20937,6 +21663,308 @@ var WebMolKit;
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
 (function (WebMolKit) {
+    let GeomWidgetType;
+    (function (GeomWidgetType) {
+        GeomWidgetType[GeomWidgetType["Atom"] = 0] = "Atom";
+        GeomWidgetType[GeomWidgetType["Bond"] = 1] = "Bond";
+    })(GeomWidgetType = WebMolKit.GeomWidgetType || (WebMolKit.GeomWidgetType = {}));
+    let GeomWidgetSelType;
+    (function (GeomWidgetSelType) {
+        GeomWidgetSelType[GeomWidgetSelType["Position"] = 0] = "Position";
+        GeomWidgetSelType[GeomWidgetSelType["Link"] = 1] = "Link";
+        GeomWidgetSelType[GeomWidgetSelType["Torsion"] = 2] = "Torsion";
+    })(GeomWidgetSelType = WebMolKit.GeomWidgetSelType || (WebMolKit.GeomWidgetSelType = {}));
+    class GeomWidget extends WebMolKit.Widget {
+        constructor(type, mol, idx) {
+            super();
+            this.type = type;
+            this.mol = mol;
+            this.idx = idx;
+            this.posX = [];
+            this.posY = [];
+            this.linkA = [];
+            this.linkB = [];
+            this.torsA = [];
+            this.torsB = [];
+            this.hovered = null;
+            if (type == GeomWidgetType.Atom) {
+                const atom = idx;
+                let adj = mol.atomAdjList(atom);
+                this.atomSubset = [atom, ...adj];
+                for (let b of mol.atomAdjBonds(atom)) {
+                    this.linkA.push(0);
+                    this.linkB.push(this.atomSubset.indexOf(mol.bondOther(b, atom)));
+                }
+                let theta = [];
+                for (let a of adj)
+                    theta.push(Math.atan2(-(mol.atomY(a) - mol.atomY(atom)), mol.atomX(a) - mol.atomX(atom)));
+                let order = WebMolKit.Vec.idxSort(theta);
+                for (let n = 0; n < order.length; n++) {
+                    this.torsA.push(order[n] + 1);
+                    this.torsB.push(order[n < order.length - 1 ? n + 1 : 0] + 1);
+                }
+                this.selected = { 'type': GeomWidgetSelType.Position, 'idx': 0 };
+            }
+            else {
+                const bond = idx;
+                let a1 = mol.bondFrom(bond), a2 = mol.bondTo(bond);
+                this.atomSubset = [...mol.atomAdjList(a1), ...mol.atomAdjList(a2)];
+                let link = (a1, a2) => {
+                    this.linkA.push(this.atomSubset.indexOf(a1));
+                    this.linkB.push(this.atomSubset.indexOf(a2));
+                };
+                link(a1, a2);
+                for (let a of mol.atomAdjList(a1))
+                    if (a != a2)
+                        link(a1, a);
+                for (let a of mol.atomAdjList(a2))
+                    if (a != a1)
+                        link(a2, a);
+                this.selected = { 'type': GeomWidgetSelType.Link, 'idx': 0 };
+            }
+        }
+        render(parent) {
+            super.render(parent);
+            let divOuter = $('<div/>').appendTo(this.content).css({ 'text-align': 'center' });
+            this.divDiagram = $('<div/>').appendTo(divOuter).css({ 'display': 'inline-block' });
+            this.content.click((event) => this.mouseClick(WebMolKit.eventCoords(event, this.divDiagram)));
+            this.content.mousemove((event) => this.mouseMove(WebMolKit.eventCoords(event, this.divDiagram)));
+            this.redraw();
+        }
+        selectionAtoms(sel) {
+            const atoms = this.atomSubset;
+            if (sel.type == GeomWidgetSelType.Position)
+                return [atoms[sel.idx]];
+            if (sel.type == GeomWidgetSelType.Link)
+                return [atoms[this.linkA[sel.idx]], atoms[this.linkB[sel.idx]]];
+            if (sel.type == GeomWidgetSelType.Torsion)
+                return [atoms[0], atoms[this.torsA[sel.idx]], atoms[this.torsB[sel.idx]]];
+            return null;
+        }
+        redraw() {
+            this.divDiagram.empty();
+            let w = 250, h = 250;
+            this.posX = [];
+            this.posY = [];
+            const ANG_RAD = 0.25;
+            for (let a of this.atomSubset) {
+                this.posX.push(this.mol.atomX(a));
+                this.posY.push(this.mol.atomY(a));
+            }
+            let loX = WebMolKit.Vec.min(this.posX) - ANG_RAD, hiX = WebMolKit.Vec.max(this.posX) + ANG_RAD;
+            let loY = WebMolKit.Vec.min(this.posY) - ANG_RAD, hiY = WebMolKit.Vec.max(this.posY) + ANG_RAD;
+            this.scale = Math.min(40, Math.min((w - 4) / (hiX - loX), (h - 4) / (hiY - loY)));
+            let dx = 0.5 * (w - (hiX - loX) * this.scale), dy = 0.5 * (h - (hiY - loY) * this.scale);
+            for (let n = 0; n < this.atomSubset.length; n++) {
+                this.posX[n] = dx + (this.posX[n] - loX) * this.scale;
+                this.posY[n] = h - (dy + (this.posY[n] - loY) * this.scale);
+            }
+            this.posRad = ANG_RAD * this.scale;
+            let gfx = new WebMolKit.MetaVector();
+            gfx.setSize(w, h);
+            let fg = WebMolKit.Theme.foreground, bg = WebMolKit.Theme.background, outerSel = 0x008FD1, innerSel = 0x47D5D2;
+            for (let n = 0; n < this.atomSubset.length; n++) {
+                if (this.hovered && this.hovered.type == GeomWidgetSelType.Position && this.hovered.idx == n)
+                    gfx.drawOval(this.posX[n], this.posY[n], this.posRad, this.posRad, fg, 1, bg);
+                else if (this.selected && this.selected.type == GeomWidgetSelType.Position && this.selected.idx == n)
+                    gfx.drawOval(this.posX[n], this.posY[n], this.posRad, this.posRad, outerSel, 1, innerSel);
+                else
+                    gfx.drawOval(this.posX[n], this.posY[n], this.posRad, this.posRad, WebMolKit.MetaVector.NOCOLOUR, 0, fg);
+            }
+            for (let showsel of [1, 2, 3])
+                for (let n = 0; n < this.linkA.length; n++) {
+                    let x1 = this.posX[this.linkA[n]], y1 = this.posY[this.linkA[n]];
+                    let x2 = this.posX[this.linkB[n]], y2 = this.posY[this.linkB[n]];
+                    if (this.hovered && this.hovered.type == GeomWidgetSelType.Link && this.hovered.idx == n) {
+                        if (showsel == 3) {
+                            gfx.drawLine(x1, y1, x2, y2, fg, this.scale * 0.1 + 2);
+                            gfx.drawLine(x1, y1, x2, y2, bg, this.scale * 0.1);
+                        }
+                    }
+                    else if (this.selected && this.selected.type == GeomWidgetSelType.Link && this.selected.idx == n) {
+                        if (showsel == 2) {
+                            gfx.drawLine(x1, y1, x2, y2, outerSel, this.scale * 0.1 + 2);
+                            gfx.drawLine(x1, y1, x2, y2, innerSel, this.scale * 0.1);
+                        }
+                    }
+                    else {
+                        if (showsel == 1)
+                            gfx.drawLine(x1, y1, x2, y2, fg, this.scale * 0.1);
+                    }
+                }
+            for (let n = 0; n < this.torsA.length; n++) {
+                let cx = this.posX[0], cy = this.posY[0];
+                let dx1 = 0.5 * (this.posX[this.torsA[n]] - cx), dy1 = 0.5 * (this.posY[this.torsA[n]] - cy);
+                let dx2 = 0.5 * (this.posX[this.torsB[n]] - cx), dy2 = 0.5 * (this.posY[this.torsB[n]] - cy);
+                let rad = 0.5 * (WebMolKit.norm_xy(dx1, dy1) + WebMolKit.norm_xy(dx2, dy2));
+                let theta1 = Math.atan2(dy1, dx1) + 10 * WebMolKit.DEGRAD, theta2 = Math.atan2(dy2, dx2) - 10 * WebMolKit.DEGRAD, dtheta = WebMolKit.angleDiff(theta2, theta1);
+                let ox1 = rad * Math.cos(theta1), oy1 = rad * Math.sin(theta1), ox2 = rad * Math.cos(theta2), oy2 = rad * Math.sin(theta2);
+                let px, py, pf;
+                if (dtheta > 0) {
+                    let [ax1, ay1, ax2, ay2] = WebMolKit.GeomUtil.arcControlPoints(rad, ox1, oy1, ox2, oy2);
+                    px = WebMolKit.Vec.add([ox1, ax1, ax2, ox2], cx);
+                    py = WebMolKit.Vec.add([oy1, ay1, ay2, oy2], cy);
+                    pf = [false, true, true, false];
+                }
+                else {
+                    let thetaM = theta1 + 0.5 * (dtheta + WebMolKit.TWOPI);
+                    let oxM = rad * Math.cos(thetaM), oyM = rad * Math.sin(thetaM);
+                    let [ax1, ay1, ax2, ay2] = WebMolKit.GeomUtil.arcControlPoints(rad, ox1, oy1, oxM, oyM);
+                    let [ax3, ay3, ax4, ay4] = WebMolKit.GeomUtil.arcControlPoints(rad, oxM, oyM, ox2, oy2);
+                    px = WebMolKit.Vec.add([ox1, ax1, ax2, oxM, ax3, ax4, ox2], cx);
+                    py = WebMolKit.Vec.add([oy1, ay1, ay2, oyM, ay3, ay4, oy2], cy);
+                    pf = [false, true, true, false, true, true, false];
+                }
+                if (this.hovered && this.hovered.type == GeomWidgetSelType.Torsion && this.hovered.idx == n) {
+                    gfx.drawPath(px, py, pf, false, fg, this.scale * 0.1 + 2, WebMolKit.MetaVector.NOCOLOUR, false);
+                    gfx.drawPath(px, py, pf, false, bg, this.scale * 0.1, WebMolKit.MetaVector.NOCOLOUR, false);
+                }
+                else if (this.selected && this.selected.type == GeomWidgetSelType.Torsion && this.selected.idx == n) {
+                    gfx.drawPath(px, py, pf, false, outerSel, this.scale * 0.1 + 2, WebMolKit.MetaVector.NOCOLOUR, false);
+                    gfx.drawPath(px, py, pf, false, innerSel, this.scale * 0.1, WebMolKit.MetaVector.NOCOLOUR, false);
+                }
+                else
+                    gfx.drawPath(px, py, pf, false, fg, this.scale * 0.1, WebMolKit.MetaVector.NOCOLOUR, false);
+            }
+            this.divDiagram.empty();
+            let svg = $(gfx.createSVG()).appendTo(this.divDiagram).css({ 'pointer-events': 'none' });
+        }
+        mouseClick(xy) {
+            event.stopPropagation();
+            if (this.type == GeomWidgetType.Bond)
+                return;
+            let which = this.whichSelection(xy[0], xy[1]);
+            if (!which)
+                return;
+            if (!this.sameSelection(this.selected, which)) {
+                this.selected = which;
+                this.hovered = null;
+                this.redraw();
+                this.callbackSelect(which);
+            }
+        }
+        mouseMove(xy) {
+            if (this.type == GeomWidgetType.Bond)
+                return;
+            let which = this.whichSelection(xy[0], xy[1]);
+            if (which && this.sameSelection(which, this.selected))
+                which = null;
+            if (!this.sameSelection(this.hovered, which)) {
+                this.hovered = which;
+                this.redraw();
+            }
+        }
+        whichSelection(x, y) {
+            let cx = this.posX[0], cy = this.posY[0];
+            if (WebMolKit.norm_xy(x - cx, y - cy) <= this.posRad)
+                return { 'type': GeomWidgetSelType.Position, 'idx': 0 };
+            let maxRad = 0;
+            for (let n = 1; n < this.atomSubset.length; n++)
+                maxRad = Math.max(maxRad, WebMolKit.norm_xy(this.posX[n] - cx, this.posY[n] - cy) + this.posRad);
+            if (WebMolKit.norm_xy(x - cx, y - cy) > maxRad)
+                return null;
+            let theta = Math.atan2(y - cy, x - cx);
+            let closeSel = null, closeDelta = Number.POSITIVE_INFINITY;
+            for (let n = 0; n < this.linkB.length; n++) {
+                let delta = Math.abs(WebMolKit.angleDiff(Math.atan2(this.posY[this.linkB[n]] - cy, this.posX[this.linkB[n]] - cx), theta));
+                if (delta < 10 * WebMolKit.DEGRAD && delta < closeDelta) {
+                    closeSel = { 'type': GeomWidgetSelType.Link, 'idx': n };
+                    closeDelta = delta;
+                }
+            }
+            for (let n = 0; n < this.torsA.length; n++) {
+                let theta1 = Math.atan2(this.posY[this.torsA[n]] - cy, this.posX[this.torsA[n]] - cx);
+                let theta2 = Math.atan2(this.posY[this.torsB[n]] - cy, this.posX[this.torsB[n]] - cx);
+                let midtheta = theta1 + 0.5 * (WebMolKit.angleDiff(theta2, theta1));
+                let delta = Math.abs(WebMolKit.angleDiff(midtheta, theta));
+                if (delta < closeDelta) {
+                    closeSel = { 'type': GeomWidgetSelType.Torsion, 'idx': n };
+                    closeDelta = delta;
+                }
+            }
+            return closeSel;
+        }
+        sameSelection(sel1, sel2) {
+            if (sel1 == null && sel2 == null)
+                return true;
+            if (sel1 == null || sel2 == null)
+                return false;
+            return sel1.type == sel2.type && sel1.idx == sel2.idx;
+        }
+    }
+    WebMolKit.GeomWidget = GeomWidget;
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
+    class ExtraFieldsWidget extends WebMolKit.Widget {
+        constructor(fields) {
+            super();
+            this.fields = fields;
+        }
+        render(parent) {
+            super.render(parent);
+            this.divFields = $('<div/>').appendTo(this.content);
+            this.fillTable();
+            let divButtons = $('<div/>').appendTo(this.content).css({ 'text-align': 'center' });
+            let btnExtra = $('<button class="wmk-button wmk-button-default">Extra</button>').appendTo(divButtons);
+            btnExtra.click(() => {
+                this.fields.push(WebMolKit.Molecule.PREFIX_EXTRA);
+                this.fillTable();
+            });
+            divButtons.append(' ');
+            let btnTransient = $('<button class="wmk-button wmk-button-default">Transient</button>').appendTo(divButtons);
+            btnTransient.click(() => {
+                this.fields.push(WebMolKit.Molecule.PREFIX_TRANSIENT);
+                this.fillTable();
+            });
+        }
+        getExtraFields() {
+            let extra = [];
+            for (let field of this.fields)
+                if (!field.startsWith(WebMolKit.Molecule.PREFIX_TRANSIENT) && field.length > 1)
+                    extra.push(field);
+            return extra;
+        }
+        getTransientFields() {
+            let transient = [];
+            for (let field of this.fields)
+                if (field.startsWith(WebMolKit.Molecule.PREFIX_TRANSIENT) && field.length > 1)
+                    transient.push(field);
+            return transient;
+        }
+        fillTable() {
+            this.divFields.empty();
+            if (this.fields.length == 0)
+                return;
+            let table = $('<table/>').appendTo(this.divFields).css({ 'width': '100%' });
+            let tr = $('<tr/>').appendTo(table);
+            $('<td/>').appendTo(tr).css({ 'text-align': 'right', 'font-weight': 'bold', 'text-decoration': 'underline' }).text('Type');
+            $('<td/>').appendTo(tr).css({ 'font-weight': 'bold', 'text-decoration': 'underline' }).text('Value');
+            for (let n = 0; n < this.fields.length; n++) {
+                let strType = '?', strValue = '';
+                if (this.fields[n].length > 0) {
+                    strType = this.fields[n].charAt(0);
+                    strValue = this.fields[n].substring(1);
+                }
+                tr = $('<tr/>').appendTo(table);
+                let tdType = $('<td/>').appendTo(tr).css({ 'text-align': 'right' }), tdValue = $('<td/>').appendTo(tr), tdButton = $('<td/>').appendTo(tr);
+                $('<span/>').appendTo(tdType).css({ 'padding': '0.2em', 'border': '1px solid black', 'background-color': '#C0C0C0' }).text(strType);
+                let input = $('<input size="20"/>').appendTo(tdValue).css({ 'width': '100%', 'font': 'inherit' });
+                input.val(strValue);
+                input.change(() => this.fields[n] = strType + input.val());
+                input.keyup(() => this.fields[n] = strType + input.val());
+                let btnDelete = $('<button class="wmk-button wmk-button-small wmk-button-default">\u{2716}</button>').appendTo(tdButton);
+                btnDelete.click(() => {
+                    this.fields.splice(n, 1);
+                    this.fillTable();
+                });
+            }
+        }
+    }
+    WebMolKit.ExtraFieldsWidget = ExtraFieldsWidget;
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
     class EditAtom extends WebMolKit.Dialog {
         constructor(mol, atom, callbackApply) {
             super();
@@ -20961,27 +21989,49 @@ var WebMolKit;
             this.btnApply.click(() => this.applyChanges());
             this.tabs = new WebMolKit.TabBar(['Atom', 'Abbreviation', 'Geometry', 'Query', 'Extra']);
             this.tabs.render(body);
+            this.tabs.callbackSelect = (idx) => {
+                if (idx == 0)
+                    this.inputSymbol.focus();
+                else if (idx == 1)
+                    this.inputAbbrevSearch.focus();
+                else if (idx == 2)
+                    this.inputGeom1.focus();
+            };
             this.populateAtom(this.tabs.getPanel('Atom'));
             this.populateAbbreviation(this.tabs.getPanel('Abbreviation'));
             this.populateGeometry(this.tabs.getPanel('Geometry'));
             this.populateQuery(this.tabs.getPanel('Query'));
             this.populateExtra(this.tabs.getPanel('Extra'));
-            setTimeout(() => this.inputSymbol.focus(), 1);
+            body.find('input').each((idx, child) => {
+                let dom = $(child).css({ 'font': 'inherit' });
+                if (idx == 0)
+                    dom.focus();
+                dom.keydown((event) => {
+                    let keyCode = event.keyCode || event.which;
+                    if (keyCode == 13)
+                        this.applyChanges();
+                    if (keyCode == 27)
+                        this.close();
+                });
+            });
         }
         applyChanges() {
+            this.mol.keepTransient = true;
             this.updateMolecule();
             if (this.tabs.getSelectedValue() == 'Abbreviation')
                 this.updateAbbrev();
+            if (this.tabs.getSelectedValue() == 'Geometry')
+                this.updateGeometry();
+            if (this.tabs.getSelectedValue() == 'Extra')
+                this.updateExtra();
+            this.mol.keepTransient = false;
             if (this.callbackApply)
                 this.callbackApply(this);
         }
         populateAtom(panel) {
             let grid = $('<div/>').appendTo(panel);
-            grid.css('display', 'grid');
-            grid.css('align-items', 'center');
-            grid.css('justify-content', 'start');
-            grid.css('grid-row-gap', '0.5em');
-            grid.css('grid-column-gap', '0.5em');
+            grid.css({ 'display': 'grid', 'align-items': 'center', 'justify-content': 'start' });
+            grid.css({ 'grid-row-gap': '0.5em', 'grid-column-gap': '0.5em' });
             grid.css('grid-template-columns', '[start col0] auto [col1] auto [col2] auto [col3] auto [col4 end]');
             grid.append('<div style="grid-area: 1 / col0;">Symbol</div>');
             this.inputSymbol = $('<input size="20"/>').appendTo(grid);
@@ -21008,7 +22058,6 @@ var WebMolKit;
             grid.append('<div style="grid-area: 5 / col2;">Index</div>');
             this.inputIndex = $('<input type="number" size="6" readonly="readonly"/>').appendTo(grid);
             this.inputIndex.css('grid-area', '5 / col3');
-            grid.find('input').css('font', 'inherit');
             const mol = this.mol, atom = this.atom;
             if (atom > 0) {
                 this.inputSymbol.val(mol.atomElement(atom));
@@ -21022,14 +22071,6 @@ var WebMolKit;
                     this.inputIsotope.val(mol.atomIsotope(atom).toString());
                 this.inputMapping.val(mol.atomMapNum(atom).toString());
                 this.inputIndex.val(atom.toString());
-            }
-            this.inputSymbol.focus();
-            for (let input of [this.inputSymbol, this.inputCharge, this.inputUnpaired, this.inputHydrogen, this.inputIsotope, this.inputMapping, this.inputIndex]) {
-                input.keydown((event) => {
-                    let keyCode = event.keyCode || event.which;
-                    if (keyCode == 13)
-                        this.applyChanges();
-                });
             }
         }
         populateAbbreviation(panel) {
@@ -21054,17 +22095,59 @@ var WebMolKit;
                 if (this.atom > 0 && WebMolKit.MolUtil.hasAbbrev(this.mol, this.atom))
                     this.applyChanges();
             });
-            this.tableAbbrev = $('<table/>').appendTo(spanList).css({ 'border-collapse': 'collapse' });
+            this.tableAbbrev = $('<table/>').appendTo(spanList).css({ 'border-collapse': 'collapse', 'width': '100%' });
             this.fillAbbreviations();
         }
         populateGeometry(panel) {
-            panel.append('Geometry: TODO');
+            const { mol, atom } = this;
+            let divContainer1 = $('<div/>').appendTo(panel).css({ 'text-align': 'center' });
+            let divContainer2 = $('<div/>').appendTo(divContainer1).css({ 'display': 'inline-block' });
+            let grid = $('<div/>').appendTo(divContainer2);
+            grid.css({ 'display': 'grid', 'align-items': 'center', 'justify-content': 'start' });
+            grid.css({ 'grid-row-gap': '0.5em', 'grid-column-gap': '0.5em' });
+            grid.css('grid-template-columns', '[start col0] auto [col1] auto [col2] auto [col3] auto [col4 end]');
+            this.geomWidget = new WebMolKit.GeomWidget(WebMolKit.GeomWidgetType.Atom, mol, atom);
+            this.geomWidget.render($('<div/>').appendTo(grid).css({ 'grid-area': '1 / col0 / auto / col4', 'text-align': 'center' }));
+            let label1 = $('<div/>').appendTo(grid).css({ 'grid-area': '2 / col0' });
+            this.inputGeom1 = $('<input type="number" size="8"/>').appendTo(grid).css({ 'grid-area': '2 / col1' });
+            let label2 = $('<div/>').appendTo(grid).css({ 'grid-area': '2 / col2' });
+            this.inputGeom2 = $('<input type="number" size="8"/>').appendTo(grid).css({ 'grid-area': '2 / col3' });
+            this.geomWidget.callbackSelect = (sel) => {
+                let atoms = this.geomWidget.selectionAtoms(sel);
+                if (sel.type == WebMolKit.GeomWidgetSelType.Position) {
+                    label1.text('Position X');
+                    label2.text('Y');
+                    this.inputGeom1.val(this.refGeom1 = mol.atomX(atoms[0]).toFixed(3));
+                    this.inputGeom2.val(this.refGeom2 = mol.atomY(atoms[0]).toFixed(3));
+                }
+                else if (sel.type == WebMolKit.GeomWidgetSelType.Link) {
+                    let dx = mol.atomX(atoms[1]) - mol.atomX(atoms[0]), dy = mol.atomY(atoms[1]) - mol.atomY(atoms[0]);
+                    label1.text('Distance');
+                    label2.text('Angle');
+                    this.inputGeom1.val(this.refGeom1 = WebMolKit.norm_xy(dx, dy).toFixed(3));
+                    this.inputGeom2.val(this.refGeom2 = (Math.atan2(dy, dx) * WebMolKit.RADDEG).toFixed(1));
+                }
+                else if (sel.type == WebMolKit.GeomWidgetSelType.Torsion) {
+                    let cx = mol.atomX(atoms[0]), cy = mol.atomY(atoms[0]);
+                    let th2 = Math.atan2(mol.atomY(atoms[1]) - cy, mol.atomX(atoms[1]) - cx);
+                    let th1 = Math.atan2(mol.atomY(atoms[2]) - cy, mol.atomX(atoms[2]) - cx);
+                    label1.text('Angle');
+                    label2.text('');
+                    this.inputGeom1.val(this.refGeom1 = (WebMolKit.angleDiffPos(th2, th1) * WebMolKit.RADDEG).toFixed(1));
+                    this.inputGeom2.val(this.refGeom2 = '');
+                }
+                label2.css('display', sel.type == WebMolKit.GeomWidgetSelType.Torsion ? 'none' : 'block');
+                this.inputGeom2.css('display', sel.type == WebMolKit.GeomWidgetSelType.Torsion ? 'none' : 'block');
+            };
+            this.geomWidget.callbackSelect(this.geomWidget.selected);
         }
         populateQuery(panel) {
             panel.append('Query: TODO');
         }
         populateExtra(panel) {
-            panel.append('Extra: TODO');
+            let fields = [...this.mol.atomExtra(this.atom), ...this.mol.atomTransient(this.atom)];
+            this.fieldsWidget = new WebMolKit.ExtraFieldsWidget(fields);
+            this.fieldsWidget.render(panel);
         }
         updateMolecule() {
             let { mol, atom } = this;
@@ -21110,6 +22193,62 @@ var WebMolKit;
                 WebMolKit.MolUtil.setAbbrev(mol, atom, abbrev.frag);
             }
         }
+        updateGeometry() {
+            let strval1 = this.inputGeom1.val(), strval2 = this.inputGeom2.val();
+            if (this.refGeom1 == strval1 && this.refGeom2 == strval2)
+                return;
+            const { mol } = this;
+            let sel = this.geomWidget.selected, atoms = this.geomWidget.selectionAtoms(sel);
+            if (sel.type == WebMolKit.GeomWidgetSelType.Position) {
+                let x = parseFloat(strval1), y = parseFloat(strval2);
+                if (isNaN(x) || isNaN(y) || Math.abs(x) > 1E6 || Math.abs(y) > 1E6)
+                    return;
+                mol.setAtomPos(atoms[0], x, y);
+            }
+            else if (sel.type == WebMolKit.GeomWidgetSelType.Link) {
+                if (this.refGeom1 != strval1) {
+                    let dist = parseFloat(strval1);
+                    if (isNaN(dist) || Math.abs(dist) > 100)
+                        return;
+                    let mask = WebMolKit.Vec.booleanArray(false, mol.numAtoms);
+                    mask[atoms[1] - 1] = true;
+                    let instate = { 'mol': mol, 'currentAtom': 0, 'currentBond': mol.findBond(atoms[0], atoms[1]), 'selectedMask': mask };
+                    let molact = new WebMolKit.MoleculeActivity(instate, WebMolKit.ActivityType.BondDist, { 'dist': dist });
+                    molact.execute();
+                    this.mol = molact.output.mol;
+                    return;
+                }
+                else if (this.refGeom2 != strval2) {
+                    let angle = parseFloat(strval2);
+                    if (isNaN(angle))
+                        return;
+                    let mask = WebMolKit.Vec.booleanArray(false, mol.numAtoms);
+                    mask[atoms[1] - 1] = true;
+                    let instate = { 'mol': mol, 'currentAtom': 0, 'currentBond': mol.findBond(atoms[0], atoms[1]), 'selectedMask': mask };
+                    let molact = new WebMolKit.MoleculeActivity(instate, WebMolKit.ActivityType.AlignAngle, { 'angle': angle * WebMolKit.DEGRAD });
+                    molact.execute();
+                    this.mol = molact.output.mol;
+                    return;
+                }
+            }
+            else if (sel.type == WebMolKit.GeomWidgetSelType.Torsion) {
+                let angle = parseFloat(strval1);
+                if (isNaN(angle))
+                    return;
+                let mask = WebMolKit.Vec.booleanArray(false, mol.numAtoms);
+                for (let a of atoms)
+                    mask[a - 1] = true;
+                let instate = { 'mol': mol, 'currentAtom': atoms[2], 'currentBond': 0, 'selectedMask': mask };
+                let molact = new WebMolKit.MoleculeActivity(instate, WebMolKit.ActivityType.AdjustTorsion, { 'angle': angle * WebMolKit.DEGRAD });
+                molact.execute();
+                this.mol = molact.output.mol;
+                return;
+            }
+        }
+        updateExtra() {
+            this.mol.setAtomExtra(this.atom, this.fieldsWidget.getExtraFields());
+            this.mol.setAtomTransient(this.atom, this.fieldsWidget.getTransientFields());
+        }
         fillAbbreviations() {
             if (WebMolKit.AbbrevContainer.needsSetup()) {
                 setTimeout(() => WebMolKit.AbbrevContainer.setupData().then(() => this.fillAbbreviations()), 1);
@@ -21124,7 +22263,16 @@ var WebMolKit;
                 let measure = new WebMolKit.OutlineMeasurement(0, 0, policy.data.pointScale);
                 for (let abbrev of this.abbrevList) {
                     let effects = new WebMolKit.RenderEffects();
-                    let layout = new WebMolKit.ArrangeMolecule(abbrev.frag, measure, policy, effects);
+                    let mol = abbrev.frag.clone();
+                    effects.atomCircleSz = WebMolKit.Vec.numberArray(0, mol.numAtoms);
+                    effects.atomCircleCol = WebMolKit.Vec.numberArray(0, mol.numAtoms);
+                    for (let n = 1; n <= mol.numAtoms; n++)
+                        if (mol.atomElement(n) == WebMolKit.MolUtil.ABBREV_ATTACHMENT) {
+                            mol.setAtomElement(n, 'C');
+                            effects.atomCircleSz[n - 1] = 0.2;
+                            effects.atomCircleCol[n - 1] = 0x00C000;
+                        }
+                    let layout = new WebMolKit.ArrangeMolecule(mol, measure, policy, effects);
                     layout.arrange();
                     let gfx = new WebMolKit.MetaVector();
                     new WebMolKit.DrawMolecule(layout, gfx).draw();
@@ -21148,7 +22296,7 @@ var WebMolKit;
             this.abbrevEntries = [];
             let search = this.inputAbbrevSearch.val().toLowerCase();
             for (let n = 0; n < this.abbrevList.length; n++) {
-                if (this.currentAbbrev != n && !this.abbrevList[n].name.toLowerCase().includes(search))
+                if (this.currentAbbrev != n && !this.abbrevList[n].nameSearch.includes(search))
                     continue;
                 let entry = {
                     'tr': $('<tr/>').appendTo(this.tableAbbrev),
@@ -21157,7 +22305,7 @@ var WebMolKit;
                 };
                 entry.tr.css('background-color', this.currentAbbrev == entry.idx ? WebMolKit.colourCode(WebMolKit.Theme.lowlight) : entry.bgcol);
                 let tdLabel = $('<td/>').appendTo(entry.tr), tdStruct = $('<td/>').appendTo(entry.tr);
-                tdLabel.html(this.abbrevList[n].name);
+                tdLabel.html(this.abbrevList[n].nameHTML);
                 let svg = $(this.svgAbbrev[n]).appendTo(tdStruct);
                 svg.css({ 'pointer-events': 'none' });
                 entry.tr.css({ 'cursor': 'pointer' });
@@ -21176,6 +22324,150 @@ var WebMolKit;
         }
     }
     WebMolKit.EditAtom = EditAtom;
+})(WebMolKit || (WebMolKit = {}));
+var WebMolKit;
+(function (WebMolKit) {
+    class EditBond extends WebMolKit.Dialog {
+        constructor(mol, bond, callbackApply) {
+            super();
+            this.bond = bond;
+            this.callbackApply = callbackApply;
+            this.initMol = mol;
+            this.mol = mol.clone();
+            this.title = 'Edit Bond';
+            this.minPortionWidth = 20;
+            this.maxPortionWidth = 95;
+        }
+        populate() {
+            let buttons = this.buttons(), body = this.body();
+            buttons.append(this.btnClose);
+            buttons.append(' ');
+            this.btnApply = $('<button class="wmk-button wmk-button-primary">Apply</button>').appendTo(buttons);
+            this.btnApply.click(() => this.applyChanges());
+            this.tabs = new WebMolKit.TabBar(['Bond', 'Geometry', 'Query', 'Extra']);
+            this.tabs.render(body);
+            this.tabs.callbackSelect = (idx) => {
+                if (idx == 0)
+                    this.inputFrom.focus();
+                else if (idx == 1)
+                    this.inputGeom1.focus();
+            };
+            this.populateBond(this.tabs.getPanel('Bond'));
+            this.populateGeometry(this.tabs.getPanel('Geometry'));
+            this.populateQuery(this.tabs.getPanel('Query'));
+            this.populateExtra(this.tabs.getPanel('Extra'));
+            body.find('input').each((idx, child) => {
+                let dom = $(child).css({ 'font': 'inherit' });
+                if (idx == 0)
+                    dom.focus();
+                dom.keydown((event) => {
+                    let keyCode = event.keyCode || event.which;
+                    if (keyCode == 13)
+                        this.applyChanges();
+                    if (keyCode == 27)
+                        this.close();
+                });
+            });
+        }
+        applyChanges() {
+            this.mol.keepTransient = true;
+            this.updateMolecule();
+            if (this.tabs.getSelectedValue() == 'Geometry')
+                this.updateGeometry();
+            if (this.tabs.getSelectedValue() == 'Extra')
+                this.updateExtra();
+            this.mol.keepTransient = false;
+            if (this.callbackApply)
+                this.callbackApply(this);
+        }
+        populateBond(panel) {
+            const { mol, bond } = this;
+            let grid = $('<div/>').appendTo(panel);
+            grid.css({ 'display': 'grid', 'align-items': 'center', 'justify-content': 'start' });
+            grid.css({ 'grid-row-gap': '0.5em', 'grid-column-gap': '0.5em' });
+            grid.css('grid-template-columns', '[start col0] auto [col1] auto [col2] auto [col3] auto [col4 end]');
+            $('<div/>').appendTo(grid).css({ 'grid-area': '1 / col0' }).text('Order');
+            let ordersHTML = [];
+            for (let o = 0; o <= 4; o++)
+                ordersHTML.push(`&nbsp;&nbsp;${o}&nbsp;&nbsp;`);
+            this.optionOrder = new WebMolKit.OptionList(ordersHTML);
+            this.optionOrder.htmlLabels = true;
+            this.optionOrder.setSelectedIndex(mol.bondOrder(bond));
+            this.optionOrder.render($('<div/>').appendTo(grid).css({ 'grid-column': 'col1 / col4', 'grid-row': '1' }));
+            $('<div/>').appendTo(grid).css({ 'grid-area': '2 / col0' }).text('Stereo');
+            this.optionStereo = new WebMolKit.OptionList(['None', 'Up', 'Down', 'Unknown']);
+            this.optionStereo.setSelectedIndex(mol.bondType(bond));
+            this.optionStereo.render($('<div/>').appendTo(grid).css({ 'grid-column': 'col1 / col4', 'grid-row': '2' }));
+            $('<div/>').appendTo(grid).css({ 'grid-area': '3 / col0' }).text('From');
+            this.inputFrom = $('<input size="6"/>').appendTo(grid).css({ 'grid-area': '3 / col1', 'font': 'inherit' }).attr('readonly', true);
+            this.inputFrom.val(mol.bondFrom(bond).toString());
+            $('<div/>').appendTo(grid).css({ 'grid-area': '3 / col2' }).text('To');
+            this.inputTo = $('<input size="6"/>').appendTo(grid).css({ 'grid-area': '3 / col3', 'font': 'inherit' }).attr('readonly', true);
+            this.inputTo.val(mol.bondTo(bond).toString());
+            $('<div/>').appendTo(grid).css({ 'grid-area': '4 / col2' }).text('Index');
+            this.inputIndex = $('<input size="6"/>').appendTo(grid).css({ 'grid-area': '4 / col3', 'font': 'inherit' }).attr('readonly', true);
+            this.inputIndex.val(bond.toString());
+        }
+        populateGeometry(panel) {
+            const { mol, bond } = this;
+            let divContainer1 = $('<div/>').appendTo(panel).css({ 'text-align': 'center' });
+            let divContainer2 = $('<div/>').appendTo(divContainer1).css({ 'display': 'inline-block' });
+            let grid = $('<div/>').appendTo(divContainer2);
+            grid.css({ 'display': 'grid', 'align-items': 'center', 'justify-content': 'start' });
+            grid.css({ 'grid-row-gap': '0.5em', 'grid-column-gap': '0.5em' });
+            grid.css('grid-template-columns', '[start col0] auto [col1] auto [col2]');
+            this.geomWidget = new WebMolKit.GeomWidget(WebMolKit.GeomWidgetType.Bond, mol, bond);
+            this.geomWidget.render($('<div/>').appendTo(grid).css({ 'grid-area': '1 / col0 / auto / col2', 'text-align': 'center' }));
+            let label1 = $('<div/>').appendTo(grid).css({ 'grid-area': '2 / col0' });
+            this.inputGeom1 = $('<input type="number" size="8"/>').appendTo(grid).css({ 'grid-area': '2 / col1' });
+            this.geomWidget.callbackSelect = (sel) => {
+                if (sel.type == WebMolKit.GeomWidgetSelType.Link) {
+                    let a1 = mol.bondFrom(bond), a2 = mol.bondTo(bond);
+                    let dx = mol.atomX(a2) - mol.atomX(a1), dy = mol.atomY(a2) - mol.atomY(a1);
+                    label1.text('Distance');
+                    this.inputGeom1.val(this.refGeom1 = WebMolKit.norm_xy(dx, dy).toFixed(3));
+                }
+            };
+            this.geomWidget.callbackSelect(this.geomWidget.selected);
+        }
+        populateQuery(panel) {
+            panel.append('Query: TODO');
+        }
+        populateExtra(panel) {
+            let fields = [...this.mol.bondExtra(this.bond), ...this.mol.bondTransient(this.bond)];
+            this.fieldsWidget = new WebMolKit.ExtraFieldsWidget(fields);
+            this.fieldsWidget.render(panel);
+        }
+        updateMolecule() {
+            let { mol, bond } = this;
+            mol.setBondOrder(bond, this.optionOrder.getSelectedIndex());
+            mol.setBondType(bond, this.optionStereo.getSelectedIndex());
+        }
+        updateGeometry() {
+            let strval1 = this.inputGeom1.val();
+            if (this.refGeom1 == strval1)
+                return;
+            const { mol } = this;
+            let sel = this.geomWidget.selected, atoms = this.geomWidget.selectionAtoms(sel);
+            if (sel.type == WebMolKit.GeomWidgetSelType.Link) {
+                if (this.refGeom1 != strval1) {
+                    let dist = parseFloat(strval1);
+                    if (isNaN(dist) || Math.abs(dist) > 100)
+                        return;
+                    let instate = { 'mol': mol, 'currentAtom': 0, 'currentBond': mol.findBond(atoms[0], atoms[1]), 'selectedMask': null };
+                    let molact = new WebMolKit.MoleculeActivity(instate, WebMolKit.ActivityType.BondDist, { 'dist': dist });
+                    molact.execute();
+                    this.mol = molact.output.mol;
+                    return;
+                }
+            }
+        }
+        updateExtra() {
+            this.mol.setBondExtra(this.bond, this.fieldsWidget.getExtraFields());
+            this.mol.setBondTransient(this.bond, this.fieldsWidget.getTransientFields());
+        }
+    }
+    WebMolKit.EditBond = EditBond;
 })(WebMolKit || (WebMolKit = {}));
 var WebMolKit;
 (function (WebMolKit) {
@@ -21334,6 +22626,11 @@ var WebMolKit;
             new WebMolKit.DrawMolecule(this.layout, this.metavec).draw();
             if (callback)
                 callback();
+        }
+        setupAsync() {
+            return __awaiter(this, void 0, void 0, function* () {
+                return new Promise((resolve) => this.setup(() => resolve()));
+            });
         }
         render(parent) {
             if (!this.width || !this.height)
@@ -21597,7 +22894,7 @@ var WebMolKit;
                 this.proxyClip.setString(mol.toString());
         }
         performCopySelection(andCut) {
-            new WebMolKit.MoleculeActivity(this, andCut ? WebMolKit.ActivityType.Cut : WebMolKit.ActivityType.Copy, {}).execute();
+            new WebMolKit.MoleculeActivity(this.getState(), andCut ? WebMolKit.ActivityType.Cut : WebMolKit.ActivityType.Copy, {}, {}, this).execute();
         }
         performPaste() {
             if (this.proxyClip && this.proxyClip.canAlwaysGet()) {
@@ -21640,13 +22937,16 @@ var WebMolKit;
                 return;
             }
             let param = { 'fragNative': mol.toString() };
-            new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.TemplateFusion, param).execute();
+            new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.TemplateFusion, param, {}, this).execute();
         }
         pickTemplatePermutation(idx) {
             let perm = this.templatePerms[idx];
             this.currentPerm = idx;
             this.layoutTemplatePerm();
             this.delayedRedraw();
+        }
+        hasFocus() {
+            return this.container.is(':focus');
         }
         scale() { return this.pointScale; }
         angToX(ax) {
@@ -22111,7 +23411,7 @@ var WebMolKit;
                 this.lassoMask = null;
                 this.delayedRedraw();
             }
-            let len = this.lassoX.length;
+            let len = WebMolKit.Vec.arrayLength(this.lassoX);
             if (len > 0 && this.lassoX[len - 1] == xy[0] && this.lassoY[len - 1] == xy[1])
                 return;
             this.lassoX.push(xy[0]);
@@ -22299,9 +23599,21 @@ var WebMolKit;
                 return;
             let dlg = new WebMolKit.EditAtom(this.mol, atom, () => {
                 if (this.mol.compareTo(dlg.mol) != 0)
-                    this.defineMolecule(dlg.mol);
+                    this.defineMolecule(dlg.mol, false, true);
                 dlg.close();
             });
+            dlg.callbackClose = () => this.container.focus();
+            dlg.open();
+        }
+        editBond(bond) {
+            if (bond == 0)
+                return;
+            let dlg = new WebMolKit.EditBond(this.mol, bond, () => {
+                if (this.mol.compareTo(dlg.mol) != 0)
+                    this.defineMolecule(dlg.mol, false, true);
+                dlg.close();
+            });
+            dlg.callbackClose = () => this.container.focus();
             dlg.open();
         }
         hitArrowKey(dx, dy) {
@@ -22401,6 +23713,7 @@ var WebMolKit;
             }
             else {
                 let bond = -clickObj;
+                this.editBond(bond);
             }
             return false;
         }
@@ -22534,7 +23847,7 @@ var WebMolKit;
                             'currentBond': this.opBond,
                             'selectedMask': []
                         };
-                        let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Delete, {}, override);
+                        let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Delete, {}, override, this);
                         molact.execute();
                     }
                 }
@@ -22571,7 +23884,7 @@ var WebMolKit;
                             'currentBond': 0,
                             'selectedMask': null
                         };
-                        let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Element, param, override);
+                        let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Element, param, override, this);
                         molact.execute();
                     }
                 }
@@ -22582,7 +23895,7 @@ var WebMolKit;
                             'currentBond': this.opBond,
                             'selectedMask': null
                         };
-                        let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Charge, { 'delta': this.toolChargeDelta }, override);
+                        let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Charge, { 'delta': this.toolChargeDelta }, override, this);
                         molact.execute();
                     }
                 }
@@ -22594,9 +23907,9 @@ var WebMolKit;
                     };
                     let molact;
                     if (this.toolBondType == WebMolKit.Molecule.BONDTYPE_NORMAL)
-                        molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.BondOrder, { 'order': this.toolBondOrder }, override);
+                        molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.BondOrder, { 'order': this.toolBondOrder }, override, this);
                     else
-                        molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.BondType, { 'type': this.toolBondType }, override);
+                        molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.BondType, { 'type': this.toolBondType }, override, this);
                     molact.execute();
                 }
             }
@@ -22626,7 +23939,7 @@ var WebMolKit;
                             'currentBond': 0,
                             'selectedMask': this.lassoMask
                         };
-                        let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Delete, {}, override);
+                        let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Delete, {}, override, this);
                         molact.execute();
                     }
                 }
@@ -22634,13 +23947,13 @@ var WebMolKit;
                     let [x0, y0, theta, magnitude] = this.determineDragTheta();
                     let degrees = -theta * WebMolKit.DEGRAD;
                     let mx = this.xToAng(x0), my = this.yToAng(y0);
-                    let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Rotate, { 'theta': degrees, 'centreX': mx, 'centreY': my });
+                    let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Rotate, { 'theta': degrees, 'centreX': mx, 'centreY': my }, {}, this);
                     molact.execute();
                 }
                 else if (this.dragType == DraggingTool.Move) {
                     let [dx, dy] = this.determineMoveDelta();
                     let scale = this.pointScale;
-                    let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Move, { 'refAtom': this.opAtom, 'deltaX': dx / scale, 'deltaY': -dy / scale });
+                    let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Move, { 'refAtom': this.opAtom, 'deltaX': dx / scale, 'deltaY': -dy / scale }, {}, this);
                     molact.execute();
                 }
                 else if (this.dragType == DraggingTool.Ring) {
@@ -22651,7 +23964,7 @@ var WebMolKit;
                             'ringY': ringY,
                             'aromatic': this.toolRingArom
                         };
-                        let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.Ring, param);
+                        let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.Ring, param, {}, this);
                         molact.execute();
                     }
                 }
@@ -22674,7 +23987,7 @@ var WebMolKit;
                     if (this.toolAtomSymbol == 'A')
                         param.element = window.prompt('Enter element symbol:', '');
                     if (param.element != '') {
-                        let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.BondAtom, param);
+                        let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.BondAtom, param, {}, this);
                         molact.execute();
                     }
                 }
@@ -22694,7 +24007,7 @@ var WebMolKit;
                         'x2': this.xToAng(x2),
                         'y2': this.yToAng(y2)
                     };
-                    let molact = new WebMolKit.MoleculeActivity(this, WebMolKit.ActivityType.BondAtom, param);
+                    let molact = new WebMolKit.MoleculeActivity(this.getState(), WebMolKit.ActivityType.BondAtom, param, {}, this);
                     molact.execute();
                 }
             }
@@ -22792,8 +24105,12 @@ var WebMolKit;
                         return false;
                     }
             }
-            if (key == "Enter")
-                this.editAtom(this.currentAtom);
+            if (key == "Enter") {
+                if (this.currentAtom > 0)
+                    this.editAtom(this.currentAtom);
+                else if (this.currentBond > 0)
+                    this.editBond(this.currentBond);
+            }
             else if (key == "ArrowLeft")
                 this.hitArrowKey(-1, 0);
             else if (key == "ArrowRight")
@@ -22910,7 +24227,7 @@ var WebMolKit;
             this.btnSave.click(() => { if (this.callbackSave)
                 this.callbackSave(this); });
             let skw = 800, skh = 650;
-            let skdiv = $('<div></div>').appendTo(this.body());
+            let skdiv = $('<div/>').appendTo(this.body());
             skdiv.css('width', skw + 'px');
             skdiv.css('height', skh + 'px');
             this.sketcher.setSize(skw, skh);
@@ -24425,7 +25742,7 @@ var WebMolKit;
         open() {
             let body = $(document.documentElement);
             let bg = this.obscureBackground = $('<div/>').appendTo(body);
-            bg.css({ 'width': '100%', 'height': document.documentElement.clientHeight + 'px' });
+            bg.css({ 'width': '100%', 'height': `max(${document.documentElement.clientHeight}px, 100vh)` });
             bg.css({ 'background-color': 'black', 'opacity': 0.2 });
             bg.css({ 'position': 'absolute', 'left': 0, 'top': 0, 'z-index': 19999 });
             bg.click(() => this.close());
@@ -24753,19 +26070,19 @@ var Mixtures;
         proxyClip.setHTML = (html) => clipboard.writeHTML(html);
         proxyClip.canSetHTML = () => true;
         proxyClip.canAlwaysGet = () => true;
+        let main;
         if (!panelClass) {
-            let dw = new Mixtures.MixturePanel(root, proxyClip);
-            if (filename)
-                dw.loadFile(filename);
+            let dw = main = new Mixtures.MixturePanel(root, proxyClip);
         }
         else {
             let proto = Mixtures[panelClass];
             if (!proto)
                 throw 'Unknown class: ' + panelClass;
-            let dw = new proto(root, proxyClip);
-            if (filename)
-                dw.loadFile(filename);
+            main = new proto(root, proxyClip);
         }
+        main.loadFile(filename);
+        const { ipcRenderer } = electron;
+        ipcRenderer.on('menuAction', (event, args) => main.menuAction(args));
     }
     Mixtures.runMixfileEditor = runMixfileEditor;
     function openNewWindow(panelClass, filename) {
@@ -24971,8 +26288,14 @@ var Mixtures;
         getMixture(idx) {
             return this.mixtures[idx].clone();
         }
+        getMixtureDirect(idx) {
+            return this.mixtures[idx];
+        }
         setMixture(idx, mixture) {
             this.mixtures[idx] = mixture.clone();
+        }
+        setMixtureDirect(idx, mixture) {
+            this.mixtures[idx] = mixture;
         }
         deleteMixture(idx) {
             this.mixtures.splice(idx, 1);
@@ -25107,6 +26430,300 @@ var Mixtures;
     Units.NAME_TO_URI = {};
     Units.URI_TO_MINCHI = {};
     Mixtures.Units = Units;
+})(Mixtures || (Mixtures = {}));
+var Mixtures;
+(function (Mixtures) {
+    class ExtractCTABComponent {
+        constructor(text) {
+            this.text = text;
+        }
+        extract() {
+            let ctab = new wmk.MDLMOLReader(this.text);
+            try {
+                ctab.parse();
+            }
+            catch (ex) {
+                return null;
+            }
+            if (!ctab.mol)
+                return null;
+            let seed = { 'mol': ctab.mol };
+            if (ctab.groupAttachAny.size > 0)
+                seed.attachAny = ctab.groupAttachAny;
+            if (ctab.groupStereoRacemic.length > 0)
+                seed.stereoRacemic = ctab.groupStereoRacemic;
+            if (ctab.groupStereoRelative.length > 0)
+                seed.stereoRelative = ctab.groupStereoRelative;
+            if (ctab.groupLinkNodes.length > 0)
+                seed.linkNodes = ctab.groupLinkNodes;
+            if (ctab.groupMixtures.length > 0)
+                seed.mixtures = ctab.groupMixtures;
+            if (!seed.attachAny && !seed.stereoRacemic && !seed.stereoRelative &&
+                !seed.linkNodes && !seed.mixtures)
+                return null;
+            const SANITY = 100;
+            let prototypes = [seed];
+            for (let n = 0; n < prototypes.length;) {
+                let proto = prototypes[n];
+                let list = this.enumerateAttachAny(proto);
+                if (!list)
+                    list = this.enumerateStereoRacemic(proto);
+                if (!list)
+                    list = this.enumerateStereoRelative(proto);
+                if (!list)
+                    list = this.enumerateLinkNodes(proto);
+                if (!list)
+                    list = this.enumerateMixtures(proto);
+                if (list) {
+                    prototypes[n] = list[0];
+                    for (let i = 1; i < list.length; i++)
+                        prototypes.splice(n + i, 0, list[i]);
+                }
+                else
+                    n++;
+                if (prototypes.length > SANITY)
+                    break;
+            }
+            if (prototypes.length == 0)
+                return null;
+            if (prototypes.length == 1 && Vec.isBlank(prototypes[0].children))
+                return null;
+            let emit = (comp, proto) => {
+                let subComp = {};
+                if (proto.mol)
+                    subComp.molfile = new wmk.MDLMOLWriter(proto.mol).write();
+                comp.contents.push(subComp);
+                if (proto.children) {
+                    subComp.contents = [];
+                    for (let child of proto.children)
+                        emit(subComp, child);
+                }
+            };
+            let comp = { 'contents': [] };
+            if (ctab.molName)
+                comp.name = ctab.molName;
+            for (let proto of prototypes)
+                emit(comp, proto);
+            return comp;
+        }
+        enumerateAttachAny(proto) {
+            if (!proto.attachAny)
+                return null;
+            let bond = null;
+            for (let look of proto.attachAny.keys()) {
+                bond = look;
+                break;
+            }
+            if (bond == null)
+                return null;
+            let atoms = proto.attachAny.get(bond);
+            proto.attachAny.delete(bond);
+            if (Vec.isBlank(atoms))
+                return null;
+            let mol = proto.mol;
+            let atomKeep = mol.bondFrom(bond), atomChop = mol.bondTo(bond);
+            if (mol.atomElement(atomChop) == '*') { }
+            else if (mol.atomElement(atomKeep) == '*')
+                [atomKeep, atomChop] = [atomChop, atomKeep];
+            else if (mol.atomAdjCount(atomKeep) < mol.atomAdjCount(atomChop))
+                [atomKeep, atomChop] = [atomChop, atomKeep];
+            for (let look of proto.attachAny.keys())
+                this.removeAtom(proto.attachAny.get(look), atomChop);
+            if (proto.stereoRelative)
+                for (let look of proto.stereoRelative)
+                    this.removeAtom(look, atomChop);
+            if (proto.stereoRacemic)
+                for (let look of proto.stereoRacemic)
+                    this.removeAtom(look, atomChop);
+            if (proto.linkNodes)
+                for (let n = proto.linkNodes.length - 1; n >= 0; n--) {
+                    if (proto.linkNodes[n].atom == atomChop) {
+                        proto.linkNodes.splice(n, 1);
+                        continue;
+                    }
+                    if (proto.linkNodes[n].atom > atomChop)
+                        proto.linkNodes[n].atom--;
+                    this.removeAtom(proto.linkNodes[n].nbrs, atomChop);
+                }
+            if (proto.mixtures)
+                for (let look of proto.mixtures)
+                    this.removeAtom(look.atoms, atomChop);
+            let list = [];
+            for (let connAtom of atoms) {
+                let cmol = mol.clone();
+                if (atomChop == cmol.bondFrom(bond))
+                    cmol.setBondFrom(bond, connAtom);
+                else
+                    cmol.setBondTo(bond, connAtom);
+                cmol.deleteAtomAndBonds(atomChop);
+                list.push(this.protoClone(proto, cmol));
+            }
+            return list;
+        }
+        enumerateStereoRacemic(proto) {
+            if (Vec.isBlank(proto.stereoRacemic))
+                return null;
+            let blk = proto.stereoRacemic.shift();
+            let mol = proto.mol;
+            let affected = new Set();
+            for (let atom of blk)
+                affected.add(atom);
+            let bonds = [];
+            for (let n = 1; n <= mol.numBonds; n++)
+                if (affected.has(mol.bondFrom(n)) || affected.has(mol.bondTo(n))) {
+                    let bt = mol.bondType(n);
+                    if (bt == wmk.Molecule.BONDTYPE_INCLINED || bt == wmk.Molecule.BONDTYPE_DECLINED)
+                        bonds.push(n);
+                }
+            let nperm = Math.min(256, 1 << bonds.length);
+            let list = [this.protoClone(proto, mol)];
+            for (let n = 1; n < nperm; n++) {
+                let rmol = mol.clone();
+                for (let i = 0, bitand = 1; i < bonds.length; i++) {
+                    if (n & bitand) {
+                        let bt = rmol.bondType(bonds[i]);
+                        bt = bt == wmk.Molecule.BONDTYPE_INCLINED ? wmk.Molecule.BONDTYPE_DECLINED : wmk.Molecule.BONDTYPE_INCLINED;
+                        rmol.setBondType(bonds[i], bt);
+                    }
+                    bitand = bitand << 1;
+                }
+                list.push(this.protoClone(proto, rmol));
+            }
+            return list;
+        }
+        enumerateStereoRelative(proto) {
+            if (Vec.isBlank(proto.stereoRelative))
+                return null;
+            let blk = proto.stereoRelative.shift();
+            let affected = new Set();
+            for (let atom of blk)
+                affected.add(atom);
+            let molinv = proto.mol.clone();
+            for (let n = 1; n <= molinv.numBonds; n++)
+                if (affected.has(molinv.bondFrom(n)) || affected.has(molinv.bondTo(n))) {
+                    let bt = molinv.bondType(n);
+                    if (bt == wmk.Molecule.BONDTYPE_INCLINED)
+                        molinv.setBondType(n, wmk.Molecule.BONDTYPE_DECLINED);
+                    else if (bt == wmk.Molecule.BONDTYPE_DECLINED)
+                        molinv.setBondType(n, wmk.Molecule.BONDTYPE_INCLINED);
+                }
+            return [proto, this.protoClone(proto, molinv)];
+        }
+        enumerateLinkNodes(proto) {
+            if (Vec.isBlank(proto.linkNodes))
+                return null;
+            let link = proto.linkNodes.shift();
+            let mol = proto.mol, a1 = link.atom;
+            let nbr1 = link.nbrs.length >= 1 ? link.nbrs[0] : 0;
+            let list = [];
+            for (let n = link.minRep; n <= link.maxRep; n++) {
+                if (n == 1) {
+                    list.push(this.protoClone(proto, mol));
+                    continue;
+                }
+                let rmol = mol.clone();
+                let addedAtoms = [];
+                for (let i = 2; i <= n; i++) {
+                    let a2 = rmol.addAtom(rmol.atomElement(a1), rmol.atomX(a1), rmol.atomY(a1));
+                    rmol.setAtomCharge(a2, rmol.atomCharge(a1));
+                    rmol.setAtomUnpaired(a2, rmol.atomUnpaired(a2));
+                    rmol.addBond(a1, a2, 1);
+                    if (nbr1 > 0) {
+                        let a3 = 0;
+                        for (let adj of rmol.atomAdjList(a1))
+                            if (adj != a2 && adj != nbr1) {
+                                a3 = adj;
+                                break;
+                            }
+                        if (a3 > 0) {
+                            let b = rmol.findBond(a1, a3);
+                            if (rmol.bondFrom(b) == a1)
+                                rmol.setBondFrom(b, a2);
+                            else
+                                rmol.setBondTo(b, a2);
+                        }
+                    }
+                    addedAtoms.push(a1);
+                }
+                let rproto = this.protoClone(proto, rmol);
+                if (rproto.mixtures)
+                    for (let mix of rproto.mixtures) {
+                        if (mix.atoms.includes(a1))
+                            mix.atoms.push(...addedAtoms);
+                    }
+                list.push();
+            }
+            return list;
+        }
+        enumerateMixtures(proto) {
+            if (Vec.isBlank(proto.mixtures))
+                return null;
+            let mol = proto.mol, mixtures = proto.mixtures;
+            let identity = mixtures.map((mix) => mix.index);
+            let leafmask = Vec.booleanArray(true, mixtures.length);
+            for (let mix of mixtures)
+                if (mix.parent > 0) {
+                    let i = identity.indexOf(mix.parent);
+                    if (i >= 0)
+                        leafmask[i] = false;
+                }
+            let root = { 'children': [] };
+            let mapTree = new Map();
+            mapTree.set(0, root);
+            while (true) {
+                let anything = false;
+                for (let n = 0; n < mixtures.length; n++)
+                    if (!leafmask[n] && !mapTree.has(mixtures[n].index)) {
+                        let parent = mapTree.get(mixtures[n].parent);
+                        if (!parent)
+                            continue;
+                        let node = { 'children': [] };
+                        parent.children.push(node);
+                        mapTree.set(mixtures[n].index, node);
+                        anything = true;
+                    }
+                if (!anything)
+                    break;
+            }
+            let nonemask = Vec.booleanArray(true, mol.numAtoms);
+            for (let mix of mixtures)
+                for (let a of mix.atoms)
+                    nonemask[a - 1] = false;
+            for (let n = 0; n < mixtures.length; n++)
+                if (leafmask[n]) {
+                    let atommask = nonemask.slice(0);
+                    for (let a of mixtures[n].atoms)
+                        atommask[a - 1] = true;
+                    let mixmol = wmk.MolUtil.subgraphMask(mol, atommask);
+                    let node = { 'mol': mixmol };
+                    mapTree.get(mixtures[n].parent).children.push(node);
+                }
+            if (root.children.length == 1)
+                root = root.children[0];
+            return root.children;
+        }
+        protoClone(proto, mol) {
+            let dup = {
+                'mol': mol,
+                'children': [],
+                'attachAny': proto.attachAny ? new Map(proto.attachAny) : null,
+                'stereoRacemic': deepClone(proto.stereoRacemic),
+                'stereoRelative': deepClone(proto.stereoRelative),
+                'linkNodes': deepClone(proto.linkNodes),
+                'mixtures': deepClone(proto.mixtures),
+            };
+            return dup;
+        }
+        removeAtom(list, atom) {
+            for (let n = list.length - 1; n >= 0; n--) {
+                if (list[n] == atom)
+                    list.splice(n, 1);
+                else if (list[n] > atom)
+                    list[n]--;
+            }
+        }
+    }
+    Mixtures.ExtractCTABComponent = ExtractCTABComponent;
 })(Mixtures || (Mixtures = {}));
 var Mixtures;
 (function (Mixtures) {
@@ -25959,6 +27576,10 @@ var Mixtures;
                 event.preventDefault();
                 this.close();
             }
+            else if (event.keyCode == 13) {
+                event.preventDefault();
+                this.saveAndClose();
+            }
         }
         createQuantity(parent) {
             let flex = $('<div/>').appendTo(parent);
@@ -26146,8 +27767,6 @@ var Mixtures;
             this.redoStack = [];
         }
         stashUndo() {
-            if (this.undoStack.length == 0 && this.mixture.isEmpty())
-                return;
             this.undoStack.push(this.mixture.clone());
             while (this.undoStack.length > UNDO_SIZE)
                 this.undoStack.splice(0, 1);
@@ -26334,6 +27953,8 @@ var Mixtures;
             let origin = [];
             if (this.selectedIndex >= 0)
                 origin = this.layout.components[this.selectedIndex].origin;
+            if (!json)
+                json = new Mixtures.ExtractCTABComponent(str).extract();
             if (!json) {
                 let mol = wmk.MoleculeStream.readUnknown(str);
                 if (wmk.MolUtil.notBlank(mol)) {
@@ -26488,6 +28109,12 @@ var Mixtures;
         }
         mouseDown(event) {
             event.preventDefault();
+            if (event.which != 1)
+                return;
+            if (event.ctrlKey) {
+                this.contextMenu(event);
+                return;
+            }
             let [x, y] = eventCoords(event, this.content);
             let comp = this.pickComponent(x, y);
             this.dragReason = DragReason.Any;
@@ -26566,7 +28193,11 @@ var Mixtures;
         }
         contextMenu(event) {
             event.preventDefault();
-            let comp = this.pickComponent(event.clientX, event.clientY);
+            let [x, y] = eventCoords(event, this.content);
+            let comp = this.pickComponent(x, y);
+            this.selectedIndex = comp;
+            this.activeIndex = -1;
+            this.delayedRedraw();
             let electron = require('electron');
             let menu = new electron.remote.Menu();
             if (comp >= 0) {
@@ -26910,8 +28541,10 @@ var Mixtures;
         constructor(commands, onAction) {
             this.commands = commands;
             this.onAction = onAction;
+            this.mapDiv = {};
             this.mapSVG = {};
             this.mapActive = {};
+            this.selected = new Set();
         }
         render(domParent) {
             domParent.empty();
@@ -26923,6 +28556,7 @@ var Mixtures;
                 for (let btn of blk) {
                     let [div, svg] = this.createCommand(btn);
                     divBlk.append(div);
+                    this.mapDiv[btn.cmd] = div;
                     this.mapSVG[btn.cmd] = svg;
                     this.mapActive[btn.cmd] = true;
                 }
@@ -26934,12 +28568,33 @@ var Mixtures;
                 this.mapSVG[cmd].css('opacity', active ? 1 : 0.5);
             }
         }
+        addSelected(cmd) {
+            if (this.selected.has(cmd))
+                return;
+            this.selected.add(cmd);
+            this.mapDiv[cmd].css({ 'background-color': '#D0D0D0' });
+        }
+        removeSelected(cmd) {
+            if (!this.selected.has(cmd))
+                return;
+            this.selected.delete(cmd);
+            this.mapDiv[cmd].css({ 'background-color': 'transparent' });
+        }
         createCommand(btn) {
             let div = $('<div/>').css({ 'display': 'inline-block' });
-            div.css({ 'width': '20px', 'height': '20px', 'margin': '2px', 'padding': '5px' });
+            let width = btn.width ? btn.width : 20;
+            div.css({ 'width': `${width}px`, 'height': '20px', 'margin': '2px', 'padding': '5px' });
             div.css({ 'border-radius': '4px' });
+            if (this.selected.has(btn.cmd))
+                div.css('background-color', '#D0D0D0');
             let svg = $('<img/>').appendTo(div).attr({ 'src': 'res/img/icons/' + btn.icon });
-            div.hover(() => div.css('background-color', this.mapActive[btn.cmd] ? '#C0C0C0' : 'transparent'), () => div.css('background-color', 'transparent'));
+            div.hover(() => {
+                let col = this.selected.has(btn.cmd) ? '#D0D0D0' : this.mapActive[btn.cmd] ? '#C0C0C0' : 'transparent';
+                div.css('background-color', col);
+            }, () => {
+                let col = this.selected.has(btn.cmd) ? '#D0D0D0' : 'transparent';
+                div.css('background-color', col);
+            });
             div.click(() => {
                 if (!this.mapActive[btn.cmd])
                     return;
@@ -27057,6 +28712,14 @@ var Mixtures;
             this.renderMain();
         }
         loadFile(filename) {
+            if (!filename) {
+                this.editor.clearHistory();
+                this.editor.setMixture(new Mixtures.Mixture(), true, true);
+                this.updateTitle();
+                this.filename = null;
+                this.isDirty = false;
+                return;
+            }
             const fs = require('fs');
             fs.readFile(filename, 'utf-8', (err, data) => {
                 if (err)
@@ -27477,6 +29140,13 @@ var Mixtures;
             this.editor.setDirty(false);
         }
         loadFile(filename) {
+            if (!filename) {
+                this.editor.clearHistory();
+                this.editor.setMixture(new Mixtures.Mixture(), true, true);
+                this.updateTitle();
+                this.filename = null;
+                return;
+            }
             const fs = require('fs');
             fs.readFile(filename, 'utf-8', (err, data) => {
                 if (err)
@@ -27766,6 +29436,16 @@ var Mixtures;
             this.banner = new Mixtures.MenuBanner(BANNER, (cmd) => this.menuAction(cmd));
             this.editor = new Mixtures.EditMixtureWeb(this.proxyClip);
             this.editor.callbackUpdateTitle = () => { };
+            let handler = new wmk.ClipboardProxyHandler();
+            handler.copyEvent = (andCut, proxy) => {
+                this.menuAction(andCut ? Mixtures.MenuBannerCommand.Cut : Mixtures.MenuBannerCommand.Copy);
+                return true;
+            };
+            handler.pasteEvent = (proxy) => {
+                this.menuAction(Mixtures.MenuBannerCommand.Paste);
+                return true;
+            };
+            this.proxyClip.pushHandler(handler);
         }
         render(parent, width, height) {
             super.render(parent);
@@ -27797,6 +29477,8 @@ var Mixtures;
                     dlg.actionCut();
                 else if (cmd == Mixtures.MenuBannerCommand.Copy)
                     dlg.actionCopy();
+                else if (cmd == Mixtures.MenuBannerCommand.Paste)
+                    dlg.actionPaste();
                 else if (cmd == Mixtures.MenuBannerCommand.Undo)
                     dlg.actionUndo();
                 else if (cmd == Mixtures.MenuBannerCommand.Redo)
@@ -27821,6 +29503,8 @@ var Mixtures;
                 this.editor.clipboardCopy(false);
             else if (cmd == Mixtures.MenuBannerCommand.CopyBranch)
                 this.editor.clipboardCopy(false, true);
+            else if (cmd == Mixtures.MenuBannerCommand.Paste)
+                this.editor.clipboardPaste();
             else if (cmd == Mixtures.MenuBannerCommand.EditStructure)
                 this.editor.editStructure();
             else if (cmd == Mixtures.MenuBannerCommand.EditDetails)
