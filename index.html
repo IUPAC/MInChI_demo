@@ -10,16 +10,33 @@
 	<link href="widgets.css" rel="stylesheet" type="text/css">
 	<script src="jquery.js" type="text/javascript"></script>
     <script src="mixfile.js" type="text/javascript"></script>
+
+	<style>
+		.maingrid
+		{
+			width: calc(100vw - 1em);
+			padding: 0.5em;
+			display: grid;
+			align-items: start;
+			justify-content: start;
+			grid-column-gap: 0.5em;
+			grid-row-gap: 0.5em;
+			grid-template-columns: [start left] max-content [right] 1fr [end];
+			grid-template-rows: [main] auto [footer] auto [end];
+		}
+    </style>
 </head>
 
-<body style="min-height: 100vh;">
+<body>
 	<h1 style="margin: 0.5em 0.5em 0 0.5em;">MInChI Demo</h1>
 
-	<div style="padding: 1em;">
-		<div id="root" style="display: inline-block; background-color: #F8F8F8;"></div>
-		<div id="buttons" style="padding-top: 0.5em;"></div>
-		<div id="minchi" style="padding-top: 0.5em;"></div>
-		<div id="prefabs" style="padding-top: 0.5em;"></div>
+	<div class="maingrid">
+		<div id="editor" style="grid-column: left; grid-row: main;"></div>
+		<div id="prefabs" style="grid-column: right; grid-row: main;"></div>
+		<div style="grid-column: start / end; grid-row: footer;">
+			<div id="buttons"></div>
+			<div id="minchi"></div>
+		</div>
 	</div>
 </body>
 
@@ -31,28 +48,30 @@
 
 	wmk.initWebMolKit('res');
 	var widget = new mix.WebWidget();
-	widget.render($('#root'), 700, 600);
+	widget.render($('#editor'), 700, 600);
 	
 	let prefabs = $('#prefabs');
-	prefabs.css({'display': 'flex', 'flex-wrap': 'wrap'});
+	let flexFab = $('<div/>').appendTo(prefabs).css({'display': 'flex', 'flex-wrap': 'wrap'});
 
-	const MIXFILES = ['mixture1', 'mixture2', 'mixture3', 'mixture4', 'mixture5', 'mixture6', 'mixture7'];
+	const MIXFILES = ['mixture01', 'mixture02', 'mixture03', 'mixture04', 'mixture05', 
+					  'mixture06', 'mixture07', 'mixture08', 'mixture09', 'mixture10',
+					  'mixture11', 'mixture12', 'mixture13', 'mixture14', 'mixture15', 
+					  'mixture16', ];
 	let mixtures = [], icons = [];
 
 	let currentIcon = -1;
+	let decorateIcon = (idx) =>
+	{
+		icons[idx].css('background-color', idx == currentIcon ? '#D0D0FF' : '#F0F0F0');
+		icons[idx].css('border', idx == currentIcon ? '1px solid black' : '1px solid #808080');
+		icons[idx].css('cursor', idx == currentIcon ? 'auto' : 'pointer');
+	};
 	let selectIcon = (idx) =>
 	{
 		if (idx == currentIcon) return;
 		currentIcon = idx;
-
 		widget.setMixture(mixtures[idx]);
-
-		for (let n = 0; n < mixtures.length; n++)
-		{
-			icons[n].css('background-color', n == currentIcon ? '#D0D0FF' : '#F0F0F0');
-			icons[n].css('border', n == currentIcon ? '1px solid black' : '1px solid #808080');
-			icons[n].css('cursor', n == currentIcon ? 'auto' : 'pointer');
-		}
+		for (let n = 0; n < mixtures.length; n++) if (mixtures[n]) decorateIcon(n);
 	};
 
 	let policy = wmk.RenderPolicy.defaultColourOnWhite(10);
@@ -67,7 +86,7 @@
 			let mixture = mix.Mixture.deserialise(content);
 			if (!mixture) throw 'Unable to load mixture: ' + fn;
 
-			let div = $('<div/>').appendTo(prefabs).css({'margin': '0 0.5em 0.5em 0'});
+			let div = $('<div/>').appendTo(flexFab).css({'margin': '0 0.5em 0.5em 0'});
 
 			let layout = new mix.ArrangeMixture(mixture, measure, policy);
 			layout.arrange();
@@ -83,10 +102,12 @@
 
 			mixtures[n] = mixture;
 			icons[n] = div;
+
+			if (n == 0) selectIcon(0);
+			decorateIcon(n);
 		}
 
 		for (let n = 0; n < MIXFILES.length; n++) icons[n].click(() => selectIcon(n));
-		selectIcon(0);
 	})();
 
 	let divButtons = $('#buttons');
@@ -111,7 +132,8 @@
 		maker.fillInChI().then(() =>
 		{
 			maker.formulate();
-			let pre = $('<pre/>').appendTo($('#minchi')).css({'padding-top': '0.5em'});
+			//let pre = $('<pre/>').appendTo($('#minchi')).css({'padding-top': '0.5em', 'word-break': 'break-all'});
+			let pre = $('<div/>').appendTo($('#minchi')).css({'font-family': 'monospace', 'padding-top': '0.5em', 'word-break': 'break-all'});
 			let minchi = maker.getResult(), segment = maker.getSegment();
 			for (let n = 0; n < minchi.length; n++)
 			{
@@ -121,12 +143,9 @@
 				else if (segment[n] == mix.MInChISegment.Component) span.css('background-color', '#C0C0FF');
 				else if (segment[n] == mix.MInChISegment.Hierarchy) span.css('background-color', '#E0E080');
 				else if (segment[n] == mix.MInChISegment.Concentration) span.css('background-color', '#80E080');
-
+				//pre.append(wmk.escapeHTML(minchi.charAt(n)));
+				pre.append('<wbr/');
 			}
-			
-			/*pre.text(maker.getResult());
-			pre.append('\n');
-			pre.append(maker.getSegment().join(''));*/
 		});
 	});	
 </script>

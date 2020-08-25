@@ -1,0 +1,30 @@
+{
+    "mixfileVersion": 1,
+    "name": "bechamel sauce",
+    "contents": 
+    [
+        {
+            "name": "flour dispersed in butter",
+            "quantity": 9.1,
+            "units": "w/w%",
+            "contents": 
+            [
+                {
+                    "name": "butter",
+                    "quantity": 46.6,
+                    "units": "w/w%"
+                },
+                {
+                    "units": "w/w%",
+                    "name": "flour",
+                    "quantity": 53.4
+                }
+            ]
+        },
+        {
+            "units": "w/w%",
+            "name": "milk",
+            "quantity": 90.9
+        }
+    ]
+}
