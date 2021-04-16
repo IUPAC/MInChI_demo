@@ -8,7 +8,6 @@
 	<link rel="shortcut icon" href="icon.ico" type="image/x-icon" />
 	<link href="main.css" rel="stylesheet" type="text/css">
 	<link href="widgets.css" rel="stylesheet" type="text/css">
-	<script src="jquery.js" type="text/javascript"></script>
     <script src="mixfile.js" type="text/javascript"></script>
 
 	<style>
@@ -21,23 +20,37 @@
 			justify-content: start;
 			grid-column-gap: 0.5em;
 			grid-row-gap: 0.5em;
-			grid-template-columns: [start left] max-content [right] 1fr [end];
-			grid-template-rows: [main] auto [footer] auto [end];
+			grid-template-columns: [start left] 720px [right] 1fr [end];
+			grid-template-rows: [main] auto [footer] 1fr [end];
+		}
+		.heading
+		{
+			margin: 0.5em 0.5em 0 0.5em;
 		}
     </style>
 </head>
 
 <body>
-	<h1 style="margin: 0.5em 0.5em 0 0.5em;">MInChI Demo</h1>
+	<h1 class="heading">MInChI Demo</h1>
 
 	<div class="maingrid">
 		<div id="editor" style="grid-column: left; grid-row: main;"></div>
-		<div id="prefabs" style="grid-column: right; grid-row: main;"></div>
-		<div style="grid-column: start / end; grid-row: footer;">
+		<div id="prefabs" style="grid-column: right; grid-row: main / end;"></div>
+		<div style="grid-column: left; grid-row: footer;">
 			<div id="buttons"></div>
-			<div id="minchi"></div>
+			<div id="minchi" style="padding-top: 0.5em;"></div>
 		</div>
 	</div>
+
+	<h2 class="heading">Links</h2>
+
+	<ul>
+		<li>IUPAC <a href="https://github.com/IUPAC/MInChI_demo" target="_blank">GitHub source materials</a> for mixtures</li>
+		<li>Mixtures open source tools <a href="https://github.com/cdd/mixtures" target="_blank">on GitHub</a></li>
+		<li>Literature: <a href="https://jcheminf.biomedcentral.com/articles/10.1186/s13321-019-0357-4" target="_blank">
+			Capturing mixture composition: an open machine-readable format for representing mixed substances</a>, A.M. Clark, L.R. McEwen, P. Gedeck, B.A. Bunin,
+			<i>Journal of Cheminformatics 2019</i></li>
+	</ul>
 </body>
 
 <script type="module">
@@ -47,24 +60,23 @@
 	mix.InChI.nativeMolfileToInChI = molfileToInChI;
 
 	wmk.initWebMolKit('res');
-	var widget = new mix.WebWidget();
-	widget.render($('#editor'), 700, 600);
-	
-	let prefabs = $('#prefabs');
-	let flexFab = $('<div/>').appendTo(prefabs).css({'display': 'flex', 'flex-wrap': 'wrap'});
 
-	const MIXFILES = ['mixture01', 'mixture02', 'mixture03', 'mixture04', 'mixture05', 
-					  'mixture06', 'mixture07', 'mixture08', 'mixture09', 'mixture10',
-					  'mixture11', 'mixture12', 'mixture13', 'mixture14', 'mixture15', 
-					  'mixture16', ];
+	var widget = new mix.WebWidget();
+	widget.render(wmk.DOM.find('#editor'), 700, 600);
+
+	let prefabs = wmk.DOM.find('#prefabs');
+	let flexFab = wmk.dom('<div/>').appendTo(prefabs).css({'display': 'flex', 'flex-wrap': 'wrap'});
+
+	const NUM_MIXTURES = 18;
+	const MIXFILES = wmk.Vec.identity1(NUM_MIXTURES).map((idx) => 'mixture' + (idx < 10 ? '0' : '') + idx + '.mixfile');
 	let mixtures = [], icons = [];
 
 	let currentIcon = -1;
 	let decorateIcon = (idx) =>
 	{
-		icons[idx].css('background-color', idx == currentIcon ? '#D0D0FF' : '#F0F0F0');
-		icons[idx].css('border', idx == currentIcon ? '1px solid black' : '1px solid #808080');
-		icons[idx].css('cursor', idx == currentIcon ? 'auto' : 'pointer');
+		icons[idx].setCSS('background-color', idx == currentIcon ? '#D0D0FF' : '#F0F0F0');
+		icons[idx].setCSS('border', idx == currentIcon ? '1px solid black' : '1px solid #808080');
+		icons[idx].setCSS('cursor', idx == currentIcon ? 'auto' : 'pointer');
 	};
 	let selectIcon = (idx) =>
 	{
@@ -77,77 +89,98 @@
 	let policy = wmk.RenderPolicy.defaultColourOnWhite(10);
 	let measure = new wmk.OutlineMeasurement(0, 0, policy.data.pointScale);
 
+	let renderMixture = (mixture) =>
+	{
+		let idx = mixtures.length;
+	
+		let div = wmk.dom('<div/>').appendTo(flexFab).css({'margin': '0 0.5em 0.5em 0'});
+
+		let layout = new mix.ArrangeMixture(mixture, measure, policy);
+		layout.arrange();
+
+		let gfx = new wmk.MetaVector();
+		let draw = new mix.DrawMixture(layout, gfx);
+		draw.draw();
+
+		const W = 120, H = 120, PAD = 3;
+		gfx.transformIntoBox(new wmk.Box(PAD, PAD, W - 2 * PAD, H - 2 * PAD));
+		gfx.setSize(W, H);
+		let fsz = 8, label = (idx + 1).toString();
+		let wad = wmk.FontData.measureText(label, fsz);
+		gfx.drawRect(0, 0, wad[0] + 2, wad[1] + wad[2] + 2, null, 0, 0x000000);
+		gfx.drawText(1, 1, label, fsz, 0xFFFFFF, wmk.TextAlign.Left | wmk.TextAlign.Top);
+		wmk.dom(gfx.createSVG()).appendTo(div).css({'display': 'block'});
+
+		mixtures[idx] = mixture;
+		icons[idx] = div;
+
+		if (idx == 0) selectIcon(0);
+		decorateIcon(idx);
+	};
+
 	(async () =>
 	{
 		for (let n = 0; n < MIXFILES.length; n++)
 		{
-			let content = await wmk.readTextURL(MIXFILES[n] + '.mixfile');
-
+			let content = await wmk.readTextURL(MIXFILES[n]);
 			let mixture = mix.Mixture.deserialise(content);
 			if (!mixture) throw 'Unable to load mixture: ' + fn;
-
-			let div = $('<div/>').appendTo(flexFab).css({'margin': '0 0.5em 0.5em 0'});
-
-			let layout = new mix.ArrangeMixture(mixture, measure, policy);
-			layout.arrange();
-
-			let gfx = new wmk.MetaVector();
-			let draw = new mix.DrawMixture(layout, gfx);
-			draw.draw();
-
-			const W = 120, H = 120, PAD = 3;
-			gfx.transformIntoBox(new wmk.Box(PAD, PAD, W - 2 * PAD, H - 2 * PAD));
-			gfx.setSize(W, H);
-			let svg = $(gfx.createSVG()).appendTo(div);
-
-			mixtures[n] = mixture;
-			icons[n] = div;
-
-			if (n == 0) selectIcon(0);
-			decorateIcon(n);
+			renderMixture(mixture);
 		}
 
-		for (let n = 0; n < MIXFILES.length; n++) icons[n].click(() => selectIcon(n));
+		let content = await wmk.readTextURL('mixturelist.json');
+		let mixlist = mix.MixtureCollection.deserialise(content);
+		for (let n = 0; n < mixlist.count; n++) 
+		{
+			renderMixture(mixlist.getMixtureDirect(n));
+			wmk.yieldDOM();
+		}
+
+		for (let n = 0; n < icons.length; n++) icons[n].onClick(() => selectIcon(n));
 	})();
 
-	let divButtons = $('#buttons');
+	let divButtons = wmk.DOM.find('#buttons');
 
-	let btnClear = $('<button class="wmk-button wmk-button-default">Clear</button>').appendTo(divButtons);
-	btnClear.click(() => widget.setMixture(new mix.Mixture()));
+	let btnClear = wmk.dom('<button class="wmk-button wmk-button-default">Clear</button>').appendTo(divButtons);
+	btnClear.onClick(() => widget.setMixture(new mix.Mixture()));
 
-	divButtons.append(' ');
+	divButtons.appendText(' ');
 
-	let btnMInChI = $('<button class="wmk-button wmk-button-primary">Create MInChI</button>').appendTo(divButtons);
-	btnMInChI.click(() => 
+	let btnMInChI = wmk.dom('<button class="wmk-button wmk-button-primary">Create MInChI</button>').appendTo(divButtons);
+	btnMInChI.onClick(() => 
 	{
 		if (widget.isBlank())
 		{
 			alert('Mixture is empty.');
 			return;
 		}
-		$('#minchi').empty();
+		let div = wmk.DOM.find('#minchi');
+		div.empty();
 
 		let mixture = widget.getMixture();
 		let maker = new mix.ExportMInChI(mixture.mixfile);
 		maker.fillInChI().then(() =>
 		{
 			maker.formulate();
-			//let pre = $('<pre/>').appendTo($('#minchi')).css({'padding-top': '0.5em', 'word-break': 'break-all'});
-			let pre = $('<div/>').appendTo($('#minchi')).css({'font-family': 'monospace', 'padding-top': '0.5em', 'word-break': 'break-all'});
+			let divOuter = wmk.dom('<div/>').appendTo(div);
+			let pre = wmk.dom('<span/>').appendTo(divOuter).css({'font-family': 'monospace', 'padding-top': '0.5em', 'word-break': 'break-all'});
 			let minchi = maker.getResult(), segment = maker.getSegment();
 			for (let n = 0; n < minchi.length; n++)
 			{
-				let span = $('<span/>').appendTo(pre);
-				span.text(minchi.charAt(n));
-				if (segment[n] == mix.MInChISegment.Header) span.css('background-color', '#FFC0C0');
-				else if (segment[n] == mix.MInChISegment.Component) span.css('background-color', '#C0C0FF');
-				else if (segment[n] == mix.MInChISegment.Hierarchy) span.css('background-color', '#E0E080');
-				else if (segment[n] == mix.MInChISegment.Concentration) span.css('background-color', '#80E080');
+				let span = wmk.dom('<span/>').appendTo(pre);
+				span.setText(minchi[n]);
+				if (segment[n] == mix.MInChISegment.Header) span.setCSS('background-color', '#FFC0C0');
+				else if (segment[n] == mix.MInChISegment.Component) span.setCSS('background-color', '#C0C0FF');
+				else if (segment[n] == mix.MInChISegment.Hierarchy) span.setCSS('background-color', '#E0E080');
+				else if (segment[n] == mix.MInChISegment.Concentration) span.setCSS('background-color', '#80E080');
 				//pre.append(wmk.escapeHTML(minchi.charAt(n)));
-				pre.append('<wbr/');
+				pre.appendHTML('<wbr/>');
 			}
+
+			let btnCopy = wmk.dom('<button class="wmk-button wmk-button-small wmk-button-default">Copy</button>').appendTo(divOuter).css({'margin-left': '0.5em'});
+			btnCopy.onClick(() => widget.proxyClip.setString(minchi));
 		});
-	});	
+	});
 </script>
 
 </html>
